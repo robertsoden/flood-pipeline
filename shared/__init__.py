@@ -6,7 +6,6 @@ Shared utilities and configuration for flood enrichment pipeline.
 from .config import (
     # File paths
     train_filepath,
-    val_filepath,
     test_filepath,
     extraction_filepath,
     unlabeled_filepath,

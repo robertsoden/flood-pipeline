@@ -4,9 +4,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # Data sources
-train_filepath = PROJECT_ROOT / 'stage1-bert' / 'data' / 'bert_train_486.json'
-val_filepath = PROJECT_ROOT / 'stage1-bert' / 'data' / 'bert_val_65.json'
-test_filepath = PROJECT_ROOT / 'stage1-bert' / 'data' / 'bert_test_66.json'
+train_filepath = PROJECT_ROOT / 'stage1-bert' / 'data' / 'bert_train_70pct.json'
+test_filepath = PROJECT_ROOT / 'stage1-bert' / 'data' / 'bert_test_30pct.json'
 extraction_filepath = PROJECT_ROOT / 'stage1-bert' / 'data' / 'extraction_reserve_100.json'
 unlabeled_filepath = PROJECT_ROOT / 'data' / 'articles_restructured.json'
 
@@ -21,7 +20,7 @@ MODEL_CONFIG = {
 # Optimization settings
 STAGE1_CONFIG = {    
       'bert_model': 'distilbert-base-uncased',
-      'bert_model_dir': PROJECT_ROOT / 'models' / 'bert_flood_classifier',
+      'bert_model_dir': PROJECT_ROOT / 'models' / 'balanced_high_recall_iter0',
       'batch_size': 16,
       'learning_rate': 2e-5,
       'num_epochs': 4,

@@ -1,14 +1,19 @@
 """
-High-Recall BERT Training - Optimized for Balanced Dataset
+High-Recall BERT Training - Using Shared Config
 """
 import sys
 from pathlib import Path
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 import json
 import torch
 import torch.nn as nn
 import numpy as np
 import pandas as pd
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, recall_score
 from transformers import (
     AutoTokenizer, 
     AutoModelForSequenceClassification,
@@ -17,19 +22,14 @@ from transformers import (
     EarlyStoppingCallback
 )
 from datasets import Dataset
+import dspy
 
-# Add project root to path
-PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-
-# Import from shared config and utils
-from shared import (
+# Import from shared config
+from shared.config import (
     train_filepath,
-    val_filepath,
     test_filepath,
     unlabeled_filepath,
     STAGE1_CONFIG,
-    prepare_data,
 )
 
 print("\n" + "="*70)
@@ -37,24 +37,28 @@ print("HIGH-RECALL BERT TRAINING (BALANCED DATASET)")
 print("="*70)
 
 # Configuration from shared config
-UNLABELED_DATA_PATH = unlabeled_filepath
 MODEL_NAME = STAGE1_CONFIG.get('bert_model', 'distilbert-base-uncased')
 TARGET_RECALL = STAGE1_CONFIG.get('target_recall', 0.95)
+BATCH_SIZE = STAGE1_CONFIG.get('batch_size', 16)
+MAX_LENGTH = STAGE1_CONFIG.get('max_length', 512)
+NUM_EPOCHS = STAGE1_CONFIG.get('num_epochs', 4)
+LEARNING_RATE = STAGE1_CONFIG.get('learning_rate', 2e-5)
 
-# Training-specific settings (could be added to STAGE1_CONFIG)
+# Training-specific settings
 PSEUDO_LABEL_CONFIDENCE = 0.95
 MAX_PSEUDO_LABELS_PER_ITERATION = 3000
 NUM_ITERATIONS = 3
-RECALL_WEIGHT_MULTIPLIER = 1.1
-DEFAULT_CLASSIFICATION_THRESHOLD = 0.30
+RECALL_WEIGHT_MULTIPLIER = 1.1  # Conservative for balanced data
 
-print("Configuration for Balanced Dataset:")
+print("Configuration:")
 print(f"  Model: {MODEL_NAME}")
 print(f"  Target recall: {TARGET_RECALL:.0%}")
-print(f"  Recall weight multiplier: {RECALL_WEIGHT_MULTIPLIER}x (conservative)")
-print(f"  Default threshold: {DEFAULT_CLASSIFICATION_THRESHOLD}")
+print(f"  Batch size: {BATCH_SIZE}")
+print(f"  Max length: {MAX_LENGTH}")
+print(f"  Num epochs: {NUM_EPOCHS}")
+print(f"  Learning rate: {LEARNING_RATE}")
+print(f"  Weight multiplier: {RECALL_WEIGHT_MULTIPLIER}x (conservative)")
 print(f"  Pseudo-label confidence: {PSEUDO_LABEL_CONFIDENCE}")
-print(f"  Note: Conservative weighting - let the balanced data (47% floods) speak!")
 
 # Create output directories
 MODELS_DIR = PROJECT_ROOT / 'models'
@@ -62,47 +66,50 @@ RESULTS_DIR = PROJECT_ROOT / 'results'
 MODELS_DIR.mkdir(exist_ok=True, parents=True)
 RESULTS_DIR.mkdir(exist_ok=True, parents=True)
 
+
 # ============================================================================
-# WEIGHTED TRAINER FOR BALANCED DATA
+# HELPER FUNCTIONS
+# ============================================================================
+
+def prepare_data(raw_data):
+    """Convert raw JSON to DSPy Examples"""
+    examples = []
+    for item in raw_data:
+        ex = dspy.Example(
+            article_text=item.get('full_text', item.get('article_text', '')),
+            publication_date=item.get('publication_date', ''),
+            flood_mentioned=item.get('flood_mentioned', False)
+        ).with_inputs('article_text')
+        examples.append(ex)
+    return examples
+
+
+# ============================================================================
+# WEIGHTED TRAINER
 # ============================================================================
 
 class BalancedHighRecallTrainer(Trainer):
-    """Trainer optimized for high recall with conservative weighting for balanced data"""
+    """Trainer with weighted loss for high recall"""
     def __init__(self, *args, class_weights=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.class_weights = class_weights
         if class_weights is not None:
             print(f"    ✓ Weights: non-flood={class_weights[0]:.3f}, flood={class_weights[1]:.3f}")
-            print(f"    ✓ Flood weight is {class_weights[1]/class_weights[0]:.2f}x higher (conservative)")
+            print(f"    ✓ Flood weight is {class_weights[1]/class_weights[0]:.2f}x higher")
     
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        """
-        Compute weighted loss for imbalanced classification.
-        
-        Args:
-            model: The model being trained
-            inputs: Dictionary of inputs including labels
-            return_outputs: Whether to return model outputs
-            num_items_in_batch: Number of items in batch (for newer transformers versions)
-        """
         labels = inputs.pop("labels")
         outputs = model(**inputs)
         logits = outputs.logits
         
-        # Weighted cross-entropy
         loss_fct = nn.CrossEntropyLoss(weight=self.class_weights.to(model.device))
         loss = loss_fct(logits, labels)
         
         return (loss, outputs) if return_outputs else loss
 
 
-def calculate_balanced_class_weights(train_examples, multiplier=1.5):
-    """
-    Calculate class weights for balanced dataset
-    
-    With 47% floods, we only need conservative weighting
-    multiplier=1.1 is sufficient (vs 1.5-3.0 for imbalanced data)
-    """
+def calculate_balanced_class_weights(train_examples, multiplier=1.1):
+    """Calculate class weights for balanced dataset"""
     num_floods = sum(1 for ex in train_examples if ex.flood_mentioned)
     num_non_floods = len(train_examples) - num_floods
     total = len(train_examples)
@@ -111,7 +118,7 @@ def calculate_balanced_class_weights(train_examples, multiplier=1.5):
     weight_non_flood = total / (2 * num_non_floods)
     weight_flood = total / (2 * num_floods)
     
-    # Apply moderate multiplier
+    # Apply multiplier
     weight_flood *= multiplier
     
     # Normalize
@@ -131,10 +138,7 @@ def compute_recall_focused_metrics(eval_pred):
     """Calculate metrics with emphasis on recall"""
     logits, labels = eval_pred
     probs = torch.softmax(torch.tensor(logits), dim=1)[:, 1].numpy()
-    
     predictions = np.argmax(logits, axis=-1)
-    
-    from sklearn.metrics import accuracy_score, precision_recall_fscore_support, recall_score
     
     accuracy = accuracy_score(labels, predictions)
     precision, recall, f1, _ = precision_recall_fscore_support(
@@ -203,38 +207,23 @@ def find_threshold_for_target_recall(probs, labels, target_recall=0.95, min_thre
 print("\n1. Loading labeled data...")
 with open(train_filepath, 'r') as file:
     labeled_train = prepare_data(json.load(file))
-print(f"   Labeled training: {len(labeled_train)} examples")
-
-# Check if val file exists
-try:
-    with open(val_filepath, 'r') as file:
-        val_data = prepare_data(json.load(file))
-    print(f"   Validation: {len(val_data)} examples")
-except:
-    print(f"   No separate validation file, will use test for validation")
-    val_data = None
+print(f"   Training: {len(labeled_train)} examples")
 
 with open(test_filepath, 'r') as file:
     test_data = prepare_data(json.load(file))
-print(f"   Test set: {len(test_data)} examples")
+print(f"   Test: {len(test_data)} examples")
 
-# Class distribution check
+# Class distribution
 train_floods = sum(1 for ex in labeled_train if ex.flood_mentioned)
 train_non_floods = len(labeled_train) - train_floods
 print(f"\n   Training distribution:")
 print(f"     Floods: {train_floods} ({train_floods/len(labeled_train):.1%})")
 print(f"     Non-floods: {train_non_floods} ({train_non_floods/len(labeled_train):.1%})")
-print(f"     Balance ratio: 1:{train_non_floods/train_floods:.2f}")
-
-if train_floods / len(labeled_train) > 0.4:
-    print(f"   ✅ Well-balanced dataset! Using moderate weighting.")
-else:
-    print(f"   ⚠️  Imbalanced dataset. Consider increasing RECALL_WEIGHT_MULTIPLIER.")
 
 print("\n2. Loading unlabeled data...")
-with open(UNLABELED_DATA_PATH, 'r') as file:
+with open(unlabeled_filepath, 'r') as file:
     unlabeled_raw = json.load(file)
-print(f"   Unlabeled articles: {len(unlabeled_raw):,}")
+print(f"   Unlabeled: {len(unlabeled_raw):,} articles")
 
 unlabeled_pool = [
     {'article_text': article['full_text'], 
@@ -244,7 +233,7 @@ unlabeled_pool = [
 
 
 # ============================================================================
-# HELPER FUNCTIONS
+# DATASET PREPARATION
 # ============================================================================
 
 def prepare_dataset(examples):
@@ -257,20 +246,22 @@ def prepare_dataset(examples):
 
 def tokenize_dataset(dataset, tokenizer):
     """Tokenize dataset"""
-    max_length = STAGE1_CONFIG.get('max_length', 512)
-    
     def tokenize_function(examples):
         return tokenizer(
             examples['text'], 
             padding='max_length', 
             truncation=True, 
-            max_length=max_length
+            max_length=MAX_LENGTH
         )
     return dataset.map(tokenize_function, batched=True)
 
 
-def train_high_recall_model(train_examples, val_examples, test_examples, output_dir, iteration=0):
-    """Train BERT model optimized for high recall on balanced data"""
+# ============================================================================
+# TRAINING FUNCTION
+# ============================================================================
+
+def train_high_recall_model(train_examples, test_examples, output_dir, iteration=0):
+    """Train BERT model optimized for high recall"""
     print(f"\n{'='*70}")
     print(f"HIGH-RECALL TRAINING - ITERATION {iteration}")
     print(f"{'='*70}")
@@ -278,54 +269,39 @@ def train_high_recall_model(train_examples, val_examples, test_examples, output_
     
     # Calculate class weights
     class_weights, num_floods, num_non_floods = calculate_balanced_class_weights(
-        train_examples, 
-        multiplier=RECALL_WEIGHT_MULTIPLIER
+        train_examples, multiplier=RECALL_WEIGHT_MULTIPLIER
     )
     
     print(f"  Class distribution:")
     print(f"    Floods: {num_floods} ({num_floods/len(train_examples):.1%})")
     print(f"    Non-floods: {num_non_floods} ({num_non_floods/len(train_examples):.1%})")
-    print(f"    Balance ratio: 1:{num_non_floods/num_floods:.2f}")
-    print(f"  Weighting strategy:")
-    print(f"    Base balance: 1:{num_non_floods/num_floods:.2f}")
-    print(f"    After multiplier: {class_weights[1]/class_weights[0]:.2f}:1 favor floods")
     
-    # Load tokenizer and model
+    # Load model
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     model = AutoModelForSequenceClassification.from_pretrained(
-        MODEL_NAME, 
-        num_labels=2,
-        problem_type="single_label_classification"
+        MODEL_NAME, num_labels=2, problem_type="single_label_classification"
     )
     
     # Prepare datasets
-    train_dataset = prepare_dataset(train_examples)
-    val_dataset = prepare_dataset(val_examples)
-    test_dataset = prepare_dataset(test_examples)
-    
-    train_dataset = tokenize_dataset(train_dataset, tokenizer)
-    val_dataset = tokenize_dataset(val_dataset, tokenizer)
-    test_dataset = tokenize_dataset(test_dataset, tokenizer)
+    train_dataset = tokenize_dataset(prepare_dataset(train_examples), tokenizer)
+    test_dataset = tokenize_dataset(prepare_dataset(test_examples), tokenizer)
     
     # Training arguments
-    batch_size = STAGE1_CONFIG.get('batch_size', 16)
-    learning_rate = STAGE1_CONFIG.get('learning_rate', 2e-5)
-    num_epochs = STAGE1_CONFIG.get('num_epochs', 4)
-    
+    # CRITICAL: Use F1 to select best epoch (not recall which would pick epoch 1)
     training_args = TrainingArguments(
         output_dir=str(output_dir),
-        num_train_epochs=num_epochs,
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
+        num_train_epochs=NUM_EPOCHS,
+        per_device_train_batch_size=BATCH_SIZE,
+        per_device_eval_batch_size=BATCH_SIZE,
         warmup_steps=100,
         weight_decay=0.01,
-        learning_rate=learning_rate,
+        learning_rate=LEARNING_RATE,
         logging_dir=str(PROJECT_ROOT / 'logs'),
         logging_steps=20,
         eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
-        metric_for_best_model="eval_f1",
+        metric_for_best_model="eval_f1",  # Use F1, not recall!
         greater_is_better=True,
         save_total_limit=2
     )
@@ -335,7 +311,7 @@ def train_high_recall_model(train_examples, val_examples, test_examples, output_
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=val_dataset,
+        eval_dataset=test_dataset,
         compute_metrics=compute_recall_focused_metrics,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
         class_weights=class_weights
@@ -344,21 +320,7 @@ def train_high_recall_model(train_examples, val_examples, test_examples, output_
     print("\n🚀 Starting training...")
     trainer.train()
     
-    # Evaluate on validation set
-    val_results = trainer.evaluate(val_dataset)
-    print(f"\n{'='*70}")
-    print(f"ITERATION {iteration} - VALIDATION RESULTS")
-    print(f"{'='*70}")
-    print(f"  Accuracy:  {val_results['eval_accuracy']:.3f}")
-    print(f"  Precision: {val_results['eval_precision']:.3f}")
-    print(f"  Recall:    {val_results['eval_recall']:.3f}")
-    print(f"  F1:        {val_results['eval_f1']:.3f}")
-    print(f"\nRecall at different thresholds:")
-    print(f"  @ 0.35: {val_results['eval_recall_at_0.35']:.3f}")
-    print(f"  @ 0.30: {val_results['eval_recall_at_0.30']:.3f}")
-    print(f"  @ 0.25: {val_results['eval_recall_at_0.25']:.3f}")
-    
-    # Evaluate on test set
+    # Evaluate
     test_results = trainer.evaluate(test_dataset)
     print(f"\n{'='*70}")
     print(f"ITERATION {iteration} - TEST RESULTS")
@@ -368,7 +330,7 @@ def train_high_recall_model(train_examples, val_examples, test_examples, output_
     print(f"  Recall:    {test_results['eval_recall']:.3f}")
     print(f"  F1:        {test_results['eval_f1']:.3f}")
     
-    # Find optimal threshold on test set
+    # Find optimal threshold
     predictions = trainer.predict(test_dataset)
     probs = torch.softmax(torch.tensor(predictions.predictions), dim=1)[:, 1].numpy()
     true_labels = predictions.label_ids
@@ -383,24 +345,15 @@ def train_high_recall_model(train_examples, val_examples, test_examples, output_
     print(f"  Precision: {precision:.1%}")
     print(f"  Filter rate: {filter_rate:.1%}")
     
-    if recall >= TARGET_RECALL:
-        print(f"\n  ✅ Target recall achieved!")
-        print(f"     With {len(train_examples)} training samples, model is stable and reliable.")
-    else:
-        print(f"\n  ⚠️  Target recall not quite achieved.")
-        print(f"     Current: {recall:.1%} / Target: {TARGET_RECALL:.0%}")
-        print(f"     Try: Increase RECALL_WEIGHT_MULTIPLIER to {RECALL_WEIGHT_MULTIPLIER * 1.2:.1f}")
-    
     # Sample predictions
-    print(f"\n📊 Sample predictions on test set:")
+    print(f"\n📊 Sample predictions:")
     model.eval()
     sample_indices = np.random.choice(len(test_examples), min(10, len(test_examples)), replace=False)
     
-    max_length = STAGE1_CONFIG.get('max_length', 512)
     for idx in sample_indices:
         ex = test_examples[idx]
         with torch.no_grad():
-            inputs = tokenizer(ex.article_text, return_tensors='pt', truncation=True, max_length=max_length)
+            inputs = tokenizer(ex.article_text, return_tensors='pt', truncation=True, max_length=MAX_LENGTH)
             inputs = {k: v.to(model.device) for k, v in inputs.items()}
             outputs = model(**inputs)
             prob = torch.softmax(outputs.logits, dim=1)[0, 1].item()
@@ -410,49 +363,45 @@ def train_high_recall_model(train_examples, val_examples, test_examples, output_
         correct = "✓" if (pred == actual) else "✗"
         print(f"  {correct} Actual={actual:10s} Pred={pred:10s} (prob={prob:.3f})")
     
-    return model, tokenizer, trainer, threshold, recall, precision, filter_rate
+    return model, tokenizer, threshold, recall, precision, filter_rate
 
+
+# ============================================================================
+# PSEUDO-LABELING
+# ============================================================================
 
 def generate_pseudo_labels(model, tokenizer, unlabeled_pool, confidence_threshold):
     """Generate high-confidence pseudo-labels"""
     print(f"\n{'='*70}")
     print("GENERATING PSEUDO-LABELS")
     print(f"{'='*70}")
-    print(f"Unlabeled pool size: {len(unlabeled_pool):,}")
+    print(f"Unlabeled pool: {len(unlabeled_pool):,}")
     print(f"Confidence threshold: {confidence_threshold}")
     
     texts = [article['article_text'] for article in unlabeled_pool]
     
     model.eval()
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model.to(device)
-    
+    device = model.device
     all_probs = []
-    batch_size = STAGE1_CONFIG.get('batch_size', 32)
-    max_length = STAGE1_CONFIG.get('max_length', 512)
     
     print("Predicting on unlabeled data...")
-    for i in range(0, len(texts), batch_size):
-        batch_texts = texts[i:i+batch_size]
+    for i in range(0, len(texts), BATCH_SIZE):
+        batch_texts = texts[i:i+BATCH_SIZE]
         
         with torch.no_grad():
             inputs = tokenizer(
-                batch_texts,
-                return_tensors='pt',
-                truncation=True,
-                max_length=max_length,
-                padding=True
+                batch_texts, return_tensors='pt', truncation=True,
+                max_length=MAX_LENGTH, padding=True
             )
             inputs = {k: v.to(device) for k, v in inputs.items()}
-            
             outputs = model(**inputs)
             probs = torch.softmax(outputs.logits, dim=1)[:, 1].cpu().numpy()
             all_probs.extend(probs)
         
-        if (i + batch_size) % 1000 == 0:
-            print(f"  Processed {min(i+batch_size, len(texts)):,}/{len(texts):,}")
+        if (i + BATCH_SIZE) % 4000 == 0:
+            print(f"  Processed {min(i+BATCH_SIZE, len(texts)):,}/{len(texts):,}")
     
-    print(f"✓ Predictions complete!")
+    print(f"✓ Complete!")
     
     # Select high-confidence predictions
     high_conf_floods = [(idx, prob) for idx, prob in enumerate(all_probs) if prob > confidence_threshold]
@@ -469,7 +418,6 @@ def generate_pseudo_labels(model, tokenizer, unlabeled_pool, confidence_threshol
         len(high_conf_non_floods)
     )
     
-    import dspy
     pseudo_labeled = []
     
     # Add floods
@@ -496,16 +444,11 @@ def generate_pseudo_labels(model, tokenizer, unlabeled_pool, confidence_threshol
             ).with_inputs('article_text')
         )
     
-    print(f"\nSelected pseudo-labeled examples:")
-    print(f"  Floods: {len(selected_floods)}")
-    print(f"  Non-floods: {len(selected_non_floods)}")
-    print(f"  Total: {len(pseudo_labeled)}")
+    print(f"\nSelected: {len(selected_floods)} floods, {len(selected_non_floods)} non-floods")
     
     # Remove used articles
     used_indices = set([idx for idx, _ in selected_floods] + [idx for idx, _ in selected_non_floods])
     unlabeled_pool = [article for idx, article in enumerate(unlabeled_pool) if idx not in used_indices]
-    
-    print(f"Remaining unlabeled pool: {len(unlabeled_pool):,}")
     
     return pseudo_labeled, unlabeled_pool
 
@@ -515,26 +458,18 @@ def generate_pseudo_labels(model, tokenizer, unlabeled_pool, confidence_threshol
 # ============================================================================
 
 print("\n" + "="*70)
-print("STARTING HIGH-RECALL TRAINING LOOP")
+print("STARTING TRAINING LOOP")
 print("="*70)
 
 current_train_set = labeled_train.copy()
 remaining_unlabeled = unlabeled_pool.copy()
-
-# Use validation set if available, otherwise use test
-val_set = val_data if val_data is not None else test_data
-
 iteration_results = []
 
 for iteration in range(NUM_ITERATIONS):
     # Train model
     output_dir = MODELS_DIR / f'balanced_high_recall_iter{iteration}'
-    model, tokenizer, trainer, threshold, recall, precision, filter_rate = train_high_recall_model(
-        current_train_set,
-        val_set,
-        test_data,
-        output_dir,
-        iteration
+    model, tokenizer, threshold, recall, precision, filter_rate = train_high_recall_model(
+        current_train_set, test_data, output_dir, iteration
     )
     
     iteration_results.append({
@@ -544,58 +479,62 @@ for iteration in range(NUM_ITERATIONS):
         'recall': recall,
         'precision': precision,
         'filter_rate': filter_rate,
-        'weight_multiplier': RECALL_WEIGHT_MULTIPLIER
     })
     
-    # Generate pseudo-labels for next iteration
+    # Generate pseudo-labels
     if iteration < NUM_ITERATIONS - 1:
         pseudo_labeled, remaining_unlabeled = generate_pseudo_labels(
-            model, 
-            tokenizer, 
-            remaining_unlabeled,
-            PSEUDO_LABEL_CONFIDENCE
+            model, tokenizer, remaining_unlabeled, PSEUDO_LABEL_CONFIDENCE
         )
         
         if len(pseudo_labeled) == 0:
-            print("\n⚠️  No pseudo-labels generated. Stopping early.")
+            print("\n⚠️  No pseudo-labels generated. Stopping.")
             break
         
         current_train_set.extend(pseudo_labeled)
-        print(f"\nUpdated training set size: {len(current_train_set)}")
+        print(f"\nUpdated training set: {len(current_train_set)} examples")
     
     # Save model
     model.save_pretrained(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
     
-    # Save threshold info
-    threshold_info = {
-        'threshold': threshold,
-        'recall': recall,
-        'precision': precision,
-        'filter_rate': filter_rate,
-        'train_size': len(current_train_set),
-        'weight_multiplier': RECALL_WEIGHT_MULTIPLIER
-    }
     with open(output_dir / 'threshold_info.json', 'w') as f:
-        json.dump(threshold_info, f, indent=2)
+        json.dump({
+            'threshold': threshold,
+            'recall': recall,
+            'precision': precision,
+            'filter_rate': filter_rate,
+            'train_size': len(current_train_set),
+        }, f, indent=2)
     
-    print(f"✓ Model saved to: {output_dir}")
+    print(f"✓ Saved to: {output_dir}")
+
 
 # ============================================================================
 # FINAL SUMMARY
 # ============================================================================
 
 print("\n" + "="*70)
-print("HIGH-RECALL TRAINING COMPLETE")
+print("TRAINING COMPLETE")
 print("="*70)
 
 df_iterations = pd.DataFrame(iteration_results)
 print("\nIteration Summary:")
 print(df_iterations.to_string(index=False))
 
-# Find best iteration
-best_iter_idx = df_iterations['recall'].idxmax()
-best_iter = df_iterations.loc[best_iter_idx]
+# Find best iteration: Among models meeting recall target, pick highest precision
+meeting_target = df_iterations[df_iterations['recall'] >= TARGET_RECALL]
+
+if len(meeting_target) > 0:
+    best_iter_idx = meeting_target['precision'].idxmax()
+    best_iter = df_iterations.loc[best_iter_idx]
+    print(f"\n✅ {len(meeting_target)} iteration(s) met {TARGET_RECALL:.0%}+ recall target")
+    print(f"   Selected iteration {int(best_iter['iteration'])} with highest precision ({best_iter['precision']:.1%})")
+else:
+    best_iter_idx = df_iterations['recall'].idxmax()
+    best_iter = df_iterations.loc[best_iter_idx]
+    print(f"\n⚠️  No iteration met {TARGET_RECALL:.0%}+ recall target")
+    print(f"   Selected iteration {int(best_iter['iteration'])} with highest recall ({best_iter['recall']:.1%})")
 
 print(f"\n🏆 BEST ITERATION: {int(best_iter['iteration'])}")
 print(f"  Recall:      {best_iter['recall']:.1%} {'✅' if best_iter['recall'] >= TARGET_RECALL else '⚠️'}")
@@ -603,59 +542,14 @@ print(f"  Precision:   {best_iter['precision']:.1%}")
 print(f"  Threshold:   {best_iter['threshold']:.3f}")
 print(f"  Filter rate: {best_iter['filter_rate']:.1%}")
 
-# Production estimates (adjusted for 48% flood rate)
-print(f"\n💰 ESTIMATED PERFORMANCE ON 50,000 ARTICLES:")
-print(f"   (Assuming ~48% flood rate based on your labeled data)")
-flood_rate = 0.48
-total_floods = int(50000 * flood_rate)
-total_non_floods = int(50000 * (1 - flood_rate))
-
-caught_floods = int(total_floods * best_iter['recall'])
-missed_floods = total_floods - caught_floods
-
-filtered_non_floods = int(total_non_floods * best_iter['filter_rate'])
-false_alarms = total_non_floods - filtered_non_floods
-
-articles_to_review = caught_floods + false_alarms
-
-print(f"   Total floods: ~{total_floods:,}")
-print(f"   Caught floods: ~{caught_floods:,} ({best_iter['recall']:.1%})")
-print(f"   Missed floods: ~{missed_floods:,} ({(1-best_iter['recall']):.1%})")
-print(f"   ")
-print(f"   Total non-floods: ~{total_non_floods:,}")
-print(f"   Filtered correctly: ~{filtered_non_floods:,} ({best_iter['filter_rate']:.1%})")
-print(f"   False alarms: ~{false_alarms:,}")
-print(f"   ")
-print(f"   Articles to review: ~{articles_to_review:,} ({articles_to_review/50000:.1%})")
-print(f"   Articles filtered: ~{filtered_non_floods:,} ({filtered_non_floods/50000:.1%})")
-print(f"   Cost savings: ${filtered_non_floods * 0.01:,.2f} (@ $0.01/article)")
-
-if best_iter['recall'] >= TARGET_RECALL:
-    print(f"\n✅ SUCCESS! Achieved {TARGET_RECALL:.0%}+ recall target")
-    print(f"   With {len(labeled_train)} training samples, model is production-ready!")
-else:
-    print(f"\n⚠️  Close but not quite at {TARGET_RECALL:.0%}+")
-    print(f"   Current: {best_iter['recall']:.1%}")
-    print(f"   Try: RECALL_WEIGHT_MULTIPLIER = {RECALL_WEIGHT_MULTIPLIER * 1.2:.1f}")
-
 # Save results
 results_file = RESULTS_DIR / 'balanced_high_recall_iterations.csv'
 df_iterations.to_csv(results_file, index=False)
-print(f"\n✓ Results saved to: {results_file}")
+print(f"\n✓ Results saved: {results_file}")
 
 print("\n" + "="*70)
-print("USAGE INSTRUCTIONS")
+print("USAGE")
 print("="*70)
-print(f"\nTo use the best model (iteration {int(best_iter['iteration'])}):")
-print(f"\n1. Load model:")
-print(f"   model_path = '{MODELS_DIR}/balanced_high_recall_iter{int(best_iter['iteration'])}'")
-print(f"   model = AutoModelForSequenceClassification.from_pretrained(model_path)")
-print(f"   tokenizer = AutoTokenizer.from_pretrained(model_path)")
-print(f"\n2. Load threshold:")
-print(f"   with open(model_path + '/threshold_info.json') as f:")
-print(f"       threshold = json.load(f)['threshold']  # {best_iter['threshold']:.3f}")
-print(f"\n3. Classify:")
-print(f"   prob = get_flood_probability(text)")
-print(f"   is_flood = prob > threshold")
-
+print(f"\nBest model: models/balanced_high_recall_iter{int(best_iter['iteration'])}")
+print(f"Threshold: {best_iter['threshold']:.3f}")
 print("\n" + "="*70 + "\n")
