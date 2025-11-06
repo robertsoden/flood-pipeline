@@ -1,0 +1,326 @@
+# Flood Enrichment Project - Git Ignore File
+# =====================================================
+
+# =====================================================
+# LARGE DATA FILES - Do NOT commit to git
+# =====================================================
+# Raw and processed data files (typically large JSON files)
+data/*.json
+data/**/*.json
+data/raw/
+data/processed/
+data/labeled/
+
+# Stage-specific data directories
+stage1-bert/data/*.json
+stage2/data/*.json
+stage3/data/*.json
+stage4/data/*.json
+
+# Exception: Keep small example/test files if needed
+# !data/example_small.json
+# !stage1-bert/data/test_sample.json
+
+# =====================================================
+# TRAINED MODELS - Large binary files
+# =====================================================
+# BERT models (can be hundreds of MB)
+models/
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Model artifacts
+mlruns/
+mlartifacts/
+*.mlflow
+
+# Exception: Keep model configs if small
+!models/**/config.json
+!models/**/vocab.txt
+!models/**/tokenizer_config.json
+
+# =====================================================
+# RESULTS & OUTPUTS
+# =====================================================
+results/
+outputs/
+logs/
+*.log
+
+# Inference outputs
+*_classified.json
+*_predictions.json
+predicted_*.json
+filtered_*.json
+
+# =====================================================
+# ARTIFACTS & CACHE
+# =====================================================
+artifacts/
+cache/
+*.cache
+
+# Geocoding cache (can be regenerated)
+geocoding_cache.json
+*_cache.json
+
+# DSPy cache
+dspy_cache/
+
+# =====================================================
+# PYTHON
+# =====================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv
+.ENV/
+env.bak/
+venv.bak/
+
+# pyenv
+.python-version
+
+# Pipenv
+Pipfile.lock
+
+# Poetry
+poetry.lock
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# =====================================================
+# TRANSFORMERS / HUGGING FACE
+# =====================================================
+# Transformers cache
+.cache/huggingface/
+transformers_cache/
+
+# Downloaded models (if using model hub)
+~/.cache/huggingface/
+
+# =====================================================
+# MACHINE LEARNING
+# =====================================================
+# TensorBoard logs
+runs/
+tensorboard/
+tf_logs/
+
+# Weights & Biases
+wandb/
+
+# DVC (Data Version Control)
+.dvc/
+*.dvc
+
+# =====================================================
+# IDEs & EDITORS
+# =====================================================
+# VSCode
+.vscode/
+.history/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.vim/
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# =====================================================
+# OPERATING SYSTEM
+# =====================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+.directory
+.Trash-*
+
+# =====================================================
+# TEMPORARY FILES
+# =====================================================
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+*.swp
+*.swo
+
+# =====================================================
+# SECRETS & ENVIRONMENT
+# =====================================================
+# Environment variables (may contain API keys)
+.env
+.env.local
+.env.*.local
+*.env
+
+# API keys and secrets
+secrets.json
+credentials.json
+*.key
+*.pem
+
+# =====================================================
+# PROJECT-SPECIFIC
+# =====================================================
+# Annotation tool temporary files
+annotation/temp/
+annotation/*.tmp
+
+# Experiment results
+experiments/
+comparison_results/
+
+# Documentation builds
+docs/_build/
+docs/.buildinfo
+
+# CSV exports (can be large)
+*.csv
+
+# Compressed files (backups)
+*.zip
+*.tar.gz
+*.rar
+
+# =====================================================
+# EXCEPTIONS - Files to KEEP in git
+# =====================================================
+# Keep small example configs
+!config_example.json
+!.env.example
+
+# Keep empty directories with .gitkeep
+!.gitkeep
+!**/.gitkeep
+
+# Keep documentation
+!README.md
+!**/README.md
+!docs/**/*.md
+
+# Keep requirements and setup files
+!requirements.txt
+!setup.py
+!pyproject.toml
+
+# Keep small test data
+!tests/fixtures/*.json

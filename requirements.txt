@@ -1,0 +1,5 @@
+dspy-ai
+pandas
+ollama
+arize-phoenix 
+openinference-instrumentation-dspy

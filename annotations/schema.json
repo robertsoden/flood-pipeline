@@ -1,0 +1,51 @@
+{
+  "fields": [
+    {
+      "name": "flood_mentioned",
+      "label": "Flood Mentioned",
+      "type": "checkbox",
+      "required": true,
+      "description": "Whether a flood is mentioned in the article"
+    },
+    {
+      "name": "is_Ontario",
+      "label": "Is Ontario",
+      "type": "checkbox",
+      "required": false,
+      "description": "Is the flood in Ontario"
+    },
+    {
+      "name": "location",
+      "label": "Location",
+      "type": "text",
+      "required": false,
+      "placeholder": "e.g., Dover Township, Thames River",
+      "description": "Where the flood took place (city, region, geographic area)"
+    },
+    {
+      "name": "impacts",
+      "label": "Impacts",
+      "type": "textarea",
+      "rows": 3,
+      "required": false,
+      "placeholder": "e.g., 50 families displaced, homes submerged",
+      "description": "Description of the flood's impacts (damage, casualties, affected areas)"
+    },
+    {
+      "name": "cause",
+      "label": "Cause",
+      "type": "text",
+      "required": false,
+      "placeholder": "e.g., heavy rain, ice jam, dam breach",
+      "description": "What caused the flood (heavy rain, snowmelt, dam breach, etc.)"
+    },
+    {
+      "name": "flood_date",
+      "label": "Flood Date",
+      "type": "text",
+      "required": false,
+      "placeholder": "e.g., March 1979",
+      "description": "When the flood occurred (month and year)"
+    }
+  ]
+}

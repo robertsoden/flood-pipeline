@@ -1,0 +1,222 @@
+
+======================================================================
+HIGH-RECALL BERT TRAINING (BALANCED DATASET)
+======================================================================
+Configuration for Balanced Dataset:
+  Target recall: 95%
+  Recall weight multiplier: 1.5x (moderate)
+  Default threshold: 0.3
+  Pseudo-label confidence: 0.95
+  Note: Moderate weighting due to 47% flood rate (nearly balanced!)
+
+1. Loading labeled data...
+   Labeled training: 486 examples
+   No separate validation file, will use test for validation
+   Test set: 66 examples
+
+   Training distribution:
+     Floods: 229 (47.1%)
+     Non-floods: 257 (52.9%)
+     Balance ratio: 1:1.12
+   ✅ Well-balanced dataset! Using moderate weighting.
+
+2. Loading unlabeled data...
+   Unlabeled articles: 50,258
+
+======================================================================
+STARTING HIGH-RECALL TRAINING LOOP
+======================================================================
+
+======================================================================
+HIGH-RECALL TRAINING - ITERATION 0
+======================================================================
+Training examples: 486
+  Class distribution:
+    Floods: 229 (47.1%)
+    Non-floods: 257 (52.9%)
+    Balance ratio: 1:1.12
+  Weighting strategy:
+    Base balance: 1:1.12
+    After multiplier: 1.68:1 favor floods
+Some weights of DistilBertForSequenceClassification were not initialized from the model checkpoint at distilbert-base-uncased and are newly initialized: ['classifier.bias', 'classifier.weight', 'pre_classifier.bias', 'pre_classifier.weight']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Map: 100%|████████████████████████████████████████████████████████████| 486/486 [00:00<00:00, 4541.37 examples/s]
+Map: 100%|██████████████████████████████████████████████████████████████| 66/66 [00:00<00:00, 3913.43 examples/s]
+Map: 100%|██████████████████████████████████████████████████████████████| 66/66 [00:00<00:00, 4205.97 examples/s]
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+    ✓ Weights: non-flood=0.745, flood=1.255
+    ✓ Flood weight is 1.68x higher (moderate)
+
+🚀 Starting training...
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+  0%|                                                                                    | 0/124 [00:00<?, ?it/s]/Users/robertsoden/www/flood_pipeline/env/lib/python3.13/site-packages/torch/utils/data/dataloader.py:692: UserWarning: 'pin_memory' argument is set as true but not supported on MPS now, device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{'loss': 0.6995, 'grad_norm': 3.24072527885437, 'learning_rate': 3.8000000000000005e-06, 'epoch': 0.65}          
+{'eval_loss': 0.5580333471298218, 'eval_accuracy': 0.803030303030303, 'eval_precision': 0.7045454545454546, 'eval_recall': 1.0, 'eval_f1': 0.8266666666666667, 'eval_recall_at_0.35': 1.0, 'eval_recall_at_0.30': 1.0, 'eval_recall_at_0.25': 1.0, 'eval_runtime': 0.869, 'eval_samples_per_second': 75.947, 'eval_steps_per_second': 5.754, 'epoch': 1.0}
+ 25%|██████████████████▊                                                        | 31/124 [00:17<00:42,  2.20it/s/Users/robertsoden/www/flood_pipeline/env/lib/python3.13/site-packages/torch/utils/data/dataloader.py:692: UserWarning: 'pin_memory' argument is set as true but not supported on MPS now, device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{'loss': 0.6095, 'grad_norm': 1.9957820177078247, 'learning_rate': 7.800000000000002e-06, 'epoch': 1.29}         
+{'loss': 0.5446, 'grad_norm': 1.583892822265625, 'learning_rate': 1.18e-05, 'epoch': 1.94}                       
+{'eval_loss': 0.4395347833633423, 'eval_accuracy': 0.803030303030303, 'eval_precision': 0.7045454545454546, 'eval_recall': 1.0, 'eval_f1': 0.8266666666666667, 'eval_recall_at_0.35': 1.0, 'eval_recall_at_0.30': 1.0, 'eval_recall_at_0.25': 1.0, 'eval_runtime': 0.8152, 'eval_samples_per_second': 80.962, 'eval_steps_per_second': 6.133, 'epoch': 2.0}
+ 50%|█████████████████████████████████████▌                                     | 62/124 [00:35<00:27,  2.26it/s/Users/robertsoden/www/flood_pipeline/env/lib/python3.13/site-packages/torch/utils/data/dataloader.py:692: UserWarning: 'pin_memory' argument is set as true but not supported on MPS now, device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{'loss': 0.4649, 'grad_norm': 2.5341837406158447, 'learning_rate': 1.58e-05, 'epoch': 2.58}                      
+{'eval_loss': 0.3352541923522949, 'eval_accuracy': 0.8484848484848485, 'eval_precision': 0.7692307692307693, 'eval_recall': 0.967741935483871, 'eval_f1': 0.8571428571428571, 'eval_recall_at_0.35': 1.0, 'eval_recall_at_0.30': 1.0, 'eval_recall_at_0.25': 1.0, 'eval_runtime': 0.8162, 'eval_samples_per_second': 80.863, 'eval_steps_per_second': 6.126, 'epoch': 3.0}
+ 75%|████████████████████████████████████████████████████████▎                  | 93/124 [00:53<00:13,  2.27it/s/Users/robertsoden/www/flood_pipeline/env/lib/python3.13/site-packages/torch/utils/data/dataloader.py:692: UserWarning: 'pin_memory' argument is set as true but not supported on MPS now, device pinned memory won't be used.
+  warnings.warn(warn_msg)
+{'loss': 0.3855, 'grad_norm': 3.806870937347412, 'learning_rate': 1.98e-05, 'epoch': 3.23}                       
+{'loss': 0.2398, 'grad_norm': 2.025912284851074, 'learning_rate': 4.166666666666667e-06, 'epoch': 3.87}          
+{'eval_loss': 0.317992627620697, 'eval_accuracy': 0.8484848484848485, 'eval_precision': 0.8387096774193549, 'eval_recall': 0.8387096774193549, 'eval_f1': 0.8387096774193549, 'eval_recall_at_0.35': 0.9032258064516129, 'eval_recall_at_0.30': 0.9032258064516129, 'eval_recall_at_0.25': 0.967741935483871, 'eval_runtime': 0.8264, 'eval_samples_per_second': 79.86, 'eval_steps_per_second': 6.05, 'epoch': 4.0}
+{'train_runtime': 73.163, 'train_samples_per_second': 26.571, 'train_steps_per_second': 1.695, 'train_loss': 0.48267206645780997, 'epoch': 4.0}                                                                                   
+100%|██████████████████████████████████████████████████████████████████████████| 124/124 [01:14<00:00,  1.67it/s]
+/Users/robertsoden/www/flood_pipeline/env/lib/python3.13/site-packages/torch/utils/data/dataloader.py:692: UserWarning: 'pin_memory' argument is set as true but not supported on MPS now, device pinned memory won't be used.
+  warnings.warn(warn_msg)
+100%|██████████████████████████████████████████████████████████████████████████████| 5/5 [00:00<00:00,  8.17it/s]
+
+======================================================================
+ITERATION 0 - VALIDATION RESULTS
+======================================================================
+  Accuracy:  0.803
+  Precision: 0.705
+  Recall:    1.000
+  F1:        0.827
+
+Recall at different thresholds:
+  @ 0.35: 1.000
+  @ 0.30: 1.000
+  @ 0.25: 1.000
+/Users/robertsoden/www/flood_pipeline/env/lib/python3.13/site-packages/torch/utils/data/dataloader.py:692: UserWarning: 'pin_memory' argument is set as true but not supported on MPS now, device pinned memory won't be used.
+  warnings.warn(warn_msg)
+100%|██████████████████████████████████████████████████████████████████████████████| 5/5 [00:00<00:00,  8.18it/s]
+
+======================================================================
+ITERATION 0 - TEST RESULTS
+======================================================================
+  Accuracy:  0.803
+  Precision: 0.705
+  Recall:    1.000
+  F1:        0.827
+/Users/robertsoden/www/flood_pipeline/env/lib/python3.13/site-packages/torch/utils/data/dataloader.py:692: UserWarning: 'pin_memory' argument is set as true but not supported on MPS now, device pinned memory won't be used.
+  warnings.warn(warn_msg)
+100%|██████████████████████████████████████████████████████████████████████████████| 5/5 [00:00<00:00,  8.15it/s]
+
+🎯 OPTIMAL THRESHOLD FOR 95%+ RECALL:
+  Threshold: 0.500
+  Recall:    100.0% ✅
+  Precision: 70.5%
+  Filter rate: 62.9%
+
+  ✅ Target recall achieved!
+     With 486 training samples, model is stable and reliable.
+
+📊 Sample predictions on test set:
+  ✓ Actual=FLOOD      Pred=FLOOD      (prob=0.632)
+  ✗ Actual=NOT FLOOD  Pred=FLOOD      (prob=0.587)
+  ✓ Actual=NOT FLOOD  Pred=NOT FLOOD  (prob=0.412)
+  ✓ Actual=NOT FLOOD  Pred=NOT FLOOD  (prob=0.412)
+  ✓ Actual=NOT FLOOD  Pred=NOT FLOOD  (prob=0.412)
+  ✓ Actual=FLOOD      Pred=FLOOD      (prob=0.641)
+  ✓ Actual=FLOOD      Pred=FLOOD      (prob=0.622)
+  ✗ Actual=NOT FLOOD  Pred=FLOOD      (prob=0.630)
+  ✗ Actual=NOT FLOOD  Pred=FLOOD      (prob=0.573)
+  ✓ Actual=FLOOD      Pred=FLOOD      (prob=0.625)
+
+======================================================================
+GENERATING PSEUDO-LABELS
+======================================================================
+Unlabeled pool size: 50,258
+Confidence threshold: 0.95
+Predicting on unlabeled data...
+  Processed 4,000/50,258
+  Processed 8,000/50,258
+  Processed 12,000/50,258
+  Processed 16,000/50,258
+  Processed 20,000/50,258
+  Processed 24,000/50,258
+  Processed 28,000/50,258
+  Processed 32,000/50,258
+  Processed 36,000/50,258
+  Processed 40,000/50,258
+  Processed 44,000/50,258
+  Processed 48,000/50,258
+✓ Predictions complete!
+
+High-confidence predictions:
+  Floods: 0 (prob > 0.95)
+  Non-floods: 0 (prob < 0.050000000000000044)
+
+Selected pseudo-labeled examples:
+  Floods: 0
+  Non-floods: 0
+  Total: 0
+Remaining unlabeled pool: 50,258
+
+⚠️  No pseudo-labels generated. Stopping early.
+
+======================================================================
+HIGH-RECALL TRAINING COMPLETE
+======================================================================
+
+Iteration Summary:
+ iteration  train_size  threshold  recall  precision  filter_rate  weight_multiplier
+         0         486        0.5     1.0   0.704545     0.628571                1.5
+
+🏆 BEST ITERATION: 0
+  Recall:      100.0% ✅
+  Precision:   70.5%
+  Threshold:   0.500
+  Filter rate: 62.9%
+
+💰 ESTIMATED PERFORMANCE ON 50,000 ARTICLES:
+   (Assuming ~48% flood rate based on your labeled data)
+   Total floods: ~24,000
+   Caught floods: ~24,000 (100.0%)
+   Missed floods: ~0 (0.0%)
+   
+   Total non-floods: ~26,000
+   Filtered correctly: ~16,342 (62.9%)
+   False alarms: ~9,658
+   
+   Articles to review: ~33,658 (67.3%)
+   Articles filtered: ~16,342 (32.7%)
+   Cost savings: $163.42 (@ $0.01/article)
+
+✅ SUCCESS! Achieved 95%+ recall target
+   With 486 training samples, model is production-ready!
+
+✓ Results saved to: results/balanced_high_recall_iterations.csv
+
+======================================================================
+USAGE INSTRUCTIONS
+======================================================================
+
+To use the best model (iteration 0):
+
+1. Load model:
+   model_path = './models/balanced_high_recall_iter0'
+   model = AutoModelForSequenceClassification.from_pretrained(model_path)
+   tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+2. Load threshold:
+   with open(model_path + '/threshold_info.json') as f:
+       threshold = json.load(f)['threshold']  # 0.500
+
+3. Classify:
+   prob = get_flood_probability(text)
+   is_flood = prob > threshold
+
+======================================================================

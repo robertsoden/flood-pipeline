@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Annotation Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: #2563eb;
+            color: white;
+            padding: 20px;
+        }
+        
+        h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .instructions {
+            padding: 20px;
+            background: #eff6ff;
+            border-bottom: 1px solid #dbeafe;
+        }
+        
+        .instructions h3 {
+            margin-bottom: 10px;
+            color: #1e40af;
+        }
+        
+        .instructions ul {
+            margin-left: 20px;
+            color: #1e3a8a;
+        }
+        
+        .instructions li {
+            margin: 5px 0;
+        }
+        
+        .instructions code {
+            background: #dbeafe;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            color: #1e40af;
+        }
+        
+        .controls {
+            padding: 20px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .file-select-area {
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            background: white;
+            margin-bottom: 15px;
+        }
+        
+        .file-select-area p {
+            margin: 10px 0;
+            color: #64748b;
+        }
+        
+        .hidden-input {
+            display: none;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+        
+        .btn-success {
+            background: #10b981;
+            color: white;
+            margin-left: 10px;
+        }
+        
+        .btn-success:hover {
+            background: #059669;
+        }
+        
+        .btn:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+        
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 20px;
+        }
+        
+        .panel {
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        
+        .panel-header {
+            background: #f1f5f9;
+            padding: 12px 15px;
+            font-weight: 600;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .panel-body {
+            padding: 15px;
+        }
+        
+        .item-display {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        
+        .annotation-fields {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .field-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        label {
+            font-weight: 500;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        
+        input[type="text"],
+        textarea,
+        select,
+        input[type="number"] {
+            padding: 8px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: #f8fafc;
+            border-top: 1px solid #e2e8f0;
+        }
+        
+        .progress {
+            font-weight: 500;
+            color: #475569;
+        }
+        
+        .nav-buttons button {
+            margin-left: 10px;
+        }
+        
+        .status {
+            padding: 10px 20px;
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            margin: 20px;
+            border-radius: 4px;
+        }
+        
+        .status.success {
+            background: #d1fae5;
+            border-color: #10b981;
+        }
+        
+        .status.error {
+            background: #fee2e2;
+            border-color: #ef4444;
+        }
+        
+        .add-field-btn {
+            background: #6366f1;
+            color: white;
+            margin-top: 10px;
+        }
+        
+        .add-field-btn:hover {
+            background: #4f46e5;
+        }
+        
+        .custom-field {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        
+        .custom-field input {
+            flex: 1;
+        }
+        
+        .remove-field {
+            background: #ef4444;
+            color: white;
+            padding: 8px 12px;
+        }
+        
+        .remove-field:hover {
+            background: #dc2626;
+        }
+
+        .file-badge {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Data Annotation Tool</h1>
+            <p>Select your JSON files to start annotating</p>
+        </div>
+        
+        <div class="instructions">
+            <h3>File Naming Conventions</h3>
+            <ul>
+                <li><strong>Schema (optional):</strong> <code>schema.json</code> or <code>template.json</code></li>
+                <li><strong>Data (required):</strong> <code>data.json</code> or <code>input.json</code></li>
+                <li>Select all files at once, the tool will detect them by name</li>
+            </ul>
+        </div>
+        
+        <div class="controls">
+            <div class="file-select-area">
+                <p><strong>Select JSON Files</strong></p>
+                <p>Choose your schema and data files (select multiple files at once)</p>
+                <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">Choose Files</button>
+                <input type="file" id="fileInput" class="hidden-input" accept=".json" multiple />
+                <div id="selectedFiles"></div>
+            </div>
+            
+            <div>
+                <button class="btn btn-success" onclick="exportData()" disabled id="exportBtn">Export Annotations</button>
+            </div>
+        </div>
+        
+        <div id="status" class="status" style="display: none;"></div>
+        
+        <div class="content" id="mainContent" style="display: none;">
+            <div class="panel">
+                <div class="panel-header">Current Item</div>
+                <div class="panel-body">
+                    <div class="item-display" id="itemDisplay"></div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <div class="panel-header">Annotations</div>
+                <div class="panel-body">
+                    <div class="annotation-fields" id="annotationFields">
+                        <!-- Fields will be generated from template or defaults -->
+                    </div>
+                    <button class="btn add-field-btn" onclick="addCustomField()" id="addFieldBtn">+ Add Custom Field</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="navigation" id="navigation" style="display: none;">
+            <div class="progress" id="progress">Item 0 of 0</div>
+            <div class="nav-buttons">
+                <button class="btn btn-primary" onclick="prevItem()" id="prevBtn">Previous</button>
+                <button class="btn btn-primary" onclick="nextItem()" id="nextBtn">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let data = [];
+        let currentIndex = 0;
+        let customFields = [];
+        let template = null;
+        let templateFields = [];
+
+        document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+
+        function showStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.style.display = 'block';
+            status.className = 'status ' + type;
+        }
+
+        async function handleFileSelect(event) {
+            const files = Array.from(event.target.files);
+            
+            if (files.length === 0) return;
+
+            const schemaNames = ['schema.json', 'template.json'];
+            const dataNames = ['data.json', 'input.json'];
+            
+            let schemaFile = null;
+            let dataFile = null;
+
+            // Identify files by name
+            files.forEach(file => {
+                const fileName = file.name.toLowerCase();
+                if (schemaNames.includes(fileName)) {
+                    schemaFile = file;
+                } else if (dataNames.includes(fileName)) {
+                    dataFile = file;
+                }
+            });
+
+            // Show selected files
+            const selectedFilesDiv = document.getElementById('selectedFiles');
+            selectedFilesDiv.innerHTML = '';
+            
+            if (schemaFile) {
+                selectedFilesDiv.innerHTML += `<span class="file-badge">Schema: ${schemaFile.name}</span>`;
+            }
+            if (dataFile) {
+                selectedFilesDiv.innerHTML += `<span class="file-badge">Data: ${dataFile.name}</span>`;
+            }
+
+            // Process files
+            if (!dataFile) {
+                showStatus('Please select a data file (data.json or input.json)', 'error');
+                return;
+            }
+
+            try {
+                // Load schema if provided
+                if (schemaFile) {
+                    const schemaText = await schemaFile.text();
+                    template = JSON.parse(schemaText);
+                    
+                    if (!template.fields || !Array.isArray(template.fields)) {
+                        showStatus('Template must contain a "fields" array', 'error');
+                        return;
+                    }
+                    
+                    templateFields = template.fields;
+                    buildAnnotationFields();
+                }
+
+                // Load data file
+                const dataText = await dataFile.text();
+                const json = JSON.parse(dataText);
+                data = Array.isArray(json) ? json : [json];
+                
+                data = data.map(item => ({
+                    original: item,
+                    annotations: {}
+                }));
+                
+                currentIndex = 0;
+                
+                if (!schemaFile) {
+                    buildDefaultFields();
+                }
+                
+                const schemaMsg = schemaFile ? `with ${templateFields.length} annotation fields` : 'with default fields';
+                showStatus(`Successfully loaded ${data.length} items ${schemaMsg}`, 'success');
+                
+                document.getElementById('mainContent').style.display = 'grid';
+                document.getElementById('navigation').style.display = 'flex';
+                document.getElementById('exportBtn').disabled = false;
+                displayItem();
+            } catch (err) {
+                showStatus('Error processing files: ' + err.message, 'error');
+            }
+        }
+
+        function buildAnnotationFields() {
+            const container = document.getElementById('annotationFields');
+            container.innerHTML = '';
+            
+            templateFields.forEach(field => {
+                const fieldGroup = document.createElement('div');
+                fieldGroup.className = 'field-group';
+                
+                const label = document.createElement('label');
+                label.textContent = field.label || field.name;
+                if (field.required) {
+                    label.innerHTML += ' <span style="color: #ef4444;">*</span>';
+                }
+                if (field.description) {
+                    label.title = field.description;
+                }
+                
+                let input;
+                
+                if (field.type === 'select' || field.type === 'dropdown') {
+                    input = document.createElement('select');
+                    input.id = field.name;
+                    
+                    const emptyOption = document.createElement('option');
+                    emptyOption.value = '';
+                    emptyOption.textContent = field.placeholder || 'Select an option';
+                    input.appendChild(emptyOption);
+                    
+                    (field.options || []).forEach(opt => {
+                        const option = document.createElement('option');
+                        option.value = typeof opt === 'object' ? opt.value : opt;
+                        option.textContent = typeof opt === 'object' ? opt.label : opt;
+                        input.appendChild(option);
+                    });
+                } else if (field.type === 'textarea') {
+                    input = document.createElement('textarea');
+                    input.id = field.name;
+                    input.placeholder = field.placeholder || '';
+                    input.rows = field.rows || 3;
+                } else if (field.type === 'number') {
+                    input = document.createElement('input');
+                    input.type = 'number';
+                    input.id = field.name;
+                    input.placeholder = field.placeholder || '';
+                    if (field.min !== undefined) input.min = field.min;
+                    if (field.max !== undefined) input.max = field.max;
+                    if (field.step !== undefined) input.step = field.step;
+                } else if (field.type === 'checkbox') {
+                    input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.id = field.name;
+                    input.style.width = 'auto';
+                    input.style.marginTop = '5px';
+                } else {
+                    input = document.createElement('input');
+                    input.type = 'text';
+                    input.id = field.name;
+                    input.placeholder = field.placeholder || '';
+                }
+                
+                fieldGroup.appendChild(label);
+                fieldGroup.appendChild(input);
+                container.appendChild(fieldGroup);
+            });
+        }
+
+        function buildDefaultFields() {
+            templateFields = [
+                { name: 'label', label: 'Label', type: 'text', placeholder: 'Enter label' },
+                { name: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Add your notes' }
+            ];
+            buildAnnotationFields();
+        }
+
+        function displayItem() {
+            if (data.length === 0) return;
+            
+            const item = data[currentIndex];
+            document.getElementById('itemDisplay').textContent = 
+                JSON.stringify(item.original, null, 2);
+            
+            templateFields.forEach(field => {
+                const input = document.getElementById(field.name);
+                if (input) {
+                    if (field.type === 'checkbox') {
+                        input.checked = item.annotations[field.name] || false;
+                    } else {
+                        input.value = item.annotations[field.name] || '';
+                    }
+                }
+            });
+            
+            customFields.forEach(field => {
+                const input = document.getElementById(field.id);
+                if (input) {
+                    input.value = item.annotations[field.name] || '';
+                }
+            });
+            
+            document.getElementById('progress').textContent = 
+                `Item ${currentIndex + 1} of ${data.length}`;
+            
+            document.getElementById('prevBtn').disabled = currentIndex === 0;
+            document.getElementById('nextBtn').disabled = currentIndex === data.length - 1;
+        }
+
+        function saveAnnotations() {
+            if (data.length === 0) return;
+            
+            const item = data[currentIndex];
+            
+            templateFields.forEach(field => {
+                const input = document.getElementById(field.name);
+                if (input) {
+                    if (field.type === 'checkbox') {
+                        item.annotations[field.name] = input.checked;
+                    } else {
+                        item.annotations[field.name] = input.value;
+                    }
+                }
+            });
+            
+            customFields.forEach(field => {
+                const input = document.getElementById(field.id);
+                if (input) {
+                    item.annotations[field.name] = input.value;
+                }
+            });
+        }
+
+        function nextItem() {
+            saveAnnotations();
+            if (currentIndex < data.length - 1) {
+                currentIndex++;
+                displayItem();
+            }
+        }
+
+        function prevItem() {
+            saveAnnotations();
+            if (currentIndex > 0) {
+                currentIndex--;
+                displayItem();
+            }
+        }
+
+        function addCustomField() {
+            const fieldName = prompt('Enter field name:');
+            if (!fieldName) return;
+            
+            const fieldId = 'custom_' + Date.now();
+            customFields.push({ id: fieldId, name: fieldName });
+            
+            const container = document.getElementById('annotationFields');
+            const fieldGroup = document.createElement('div');
+            fieldGroup.className = 'field-group custom-field';
+            fieldGroup.innerHTML = `
+                <div style="flex: 1;">
+                    <label>${fieldName}</label>
+                    <input type="text" id="${fieldId}" placeholder="Enter ${fieldName}">
+                </div>
+                <button class="btn remove-field" onclick="removeCustomField('${fieldId}')">Remove</button>
+            `;
+            container.appendChild(fieldGroup);
+        }
+
+        function removeCustomField(fieldId) {
+            customFields = customFields.filter(f => f.id !== fieldId);
+            document.getElementById(fieldId).closest('.custom-field').remove();
+        }
+
+        function exportData() {
+            saveAnnotations();
+            
+            const output = data.map(item => ({
+                ...item.original,
+                annotations: item.annotations
+            }));
+            
+            const blob = new Blob([JSON.stringify(output, null, 2)], 
+                { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'annotated_data.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            showStatus('Data exported successfully!', 'success');
+        }
+    </script>
+</body>
+</html>
