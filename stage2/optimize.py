@@ -1,6 +1,6 @@
 """
-Stage 2: Flood Verification and Ontario Filtering
-High-precision LLM-based verification of BERT-filtered articles
+Stage 2 Optimization: Train and optimize flood verification models
+Run this once to create optimized models, then use process.py to apply them.
 """
 import sys
 from pathlib import Path
@@ -24,28 +24,24 @@ from stage2.signatures import floodIdentification, isOntario
 from stage2.metrics import extraction_precision_focused_metric, ontario_correctness_metric
 
 print("\n" + "="*70)
-print("STAGE 2: FLOOD VERIFICATION AND ONTARIO FILTERING")
+print("STAGE 2: MODEL OPTIMIZATION")
 print("="*70)
+print("\nThis script trains and optimizes the flood verification models.")
+print("Run this once, then use process.py to apply the models.\n")
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
-# Input/output paths
-STAGE1_RESULTS = PROJECT_ROOT / 'results' / 'predicted_floods.json'
-OUTPUT_DIR = PROJECT_ROOT / 'results'
 MODELS_DIR = PROJECT_ROOT / 'models'
-
-# Create output directories
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-print(f"\nConfiguration:")
-print(f"  Stage 1 input: {STAGE1_RESULTS}")
+print(f"Configuration:")
 print(f"  Model: {MODEL_CONFIG['name']}")
 print(f"  Max bootstrapped demos: {STAGE2_CONFIG['max_bootstrapped_demos']}")
 print(f"  Max labeled demos: {STAGE2_CONFIG['max_labeled_demos']}")
 print(f"  Num candidate programs: {STAGE2_CONFIG['num_candidate_programs']}")
+print(f"  Num threads: {STAGE2_CONFIG['num_threads']}")
 
 # ============================================================================
 # LOAD DATA
@@ -62,22 +58,11 @@ with open(test_filepath, 'r') as file:
     test_set = prepare_data(json.load(file))
 print(f"   Test examples: {len(test_set)}")
 
-# Load Stage 1 BERT results
-print("\n2. Loading Stage 1 BERT results...")
-try:
-    with open(STAGE1_RESULTS, 'r') as file:
-        stage1_articles = json.load(file)
-    print(f"   Loaded {len(stage1_articles):,} articles from Stage 1")
-except FileNotFoundError:
-    print(f"   ERROR: Stage 1 results not found at {STAGE1_RESULTS}")
-    print(f"   Please run stage1-bert/bert-inference.py first")
-    sys.exit(1)
-
 # ============================================================================
 # CONFIGURE DSPY
 # ============================================================================
 
-print("\n3. Configuring DSPy...")
+print("\n2. Configuring DSPy...")
 
 # Configure language model
 lm = dspy.LM(
@@ -89,13 +74,13 @@ dspy.configure(lm=lm)
 print(f"   ✓ LM configured: {MODEL_CONFIG['name']}")
 
 # ============================================================================
-# STAGE 2.1: FLOOD VERIFICATION (HIGH PRECISION)
+# OPTIMIZE FLOOD VERIFICATION MODEL
 # ============================================================================
 
 print("\n" + "="*70)
-print("STAGE 2.1: FLOOD VERIFICATION (HIGH PRECISION)")
+print("OPTIMIZING FLOOD VERIFICATION MODEL")
 print("="*70)
-print("Goal: Re-verify flood mentions with LLM to reduce false positives")
+print("Goal: High-precision flood detection to reduce BERT false positives")
 
 # Create predictor
 flood_verifier = dspy.ChainOfThought(floodIdentification)
@@ -116,6 +101,9 @@ print(f"Baseline Score: {baseline_flood.score:.2f}%")
 
 # Optimize
 print("\nOptimizing flood verification...")
+print(f"This will process {len(train_set)} training examples with {STAGE2_CONFIG['num_candidate_programs']} candidate programs.")
+print("This may take a while...\n")
+
 flood_optimizer = dspy.BootstrapFewShotWithRandomSearch(
     metric=extraction_precision_focused_metric,
     max_bootstrapped_demos=STAGE2_CONFIG['max_bootstrapped_demos'],
@@ -153,64 +141,14 @@ print(f"  Precision: {precision:.2%} | Recall: {recall:.2%} | F1: {f1:.2%}")
 # Save optimized model
 model_path = MODELS_DIR / 'stage2_flood_verified.json'
 optimized_flood_verifier.save(str(model_path))
-print(f"\n✓ Model saved: {model_path}")
+print(f"\n✓ Flood verification model saved: {model_path}")
 
 # ============================================================================
-# APPLY FLOOD VERIFICATION TO STAGE 1 RESULTS
-# ============================================================================
-
-print("\n" + "="*70)
-print("APPLYING FLOOD VERIFICATION TO STAGE 1 RESULTS")
-print("="*70)
-
-verified_floods = []
-flood_verification_stats = {'verified': 0, 'rejected': 0}
-
-print(f"Processing {len(stage1_articles):,} articles...")
-
-for i, article in enumerate(stage1_articles):
-    # Create DSPy example
-    example_input = dspy.Example(
-        article_text=article.get('full_text', '')
-    ).with_inputs('article_text')
-
-    # Predict
-    prediction = optimized_flood_verifier(**example_input.inputs())
-
-    # Add Stage 2 results to article
-    article['stage2'] = {
-        'flood_verified': prediction.flood_mentioned,
-        'flood_reasoning': prediction.reasoning,
-        'confidence': article.get('confidence', 'UNKNOWN')
-    }
-
-    # Track verified floods
-    if prediction.flood_mentioned:
-        verified_floods.append(article)
-        flood_verification_stats['verified'] += 1
-    else:
-        flood_verification_stats['rejected'] += 1
-
-    # Progress indicator
-    if (i + 1) % 100 == 0:
-        print(f"  Processed {i+1:,}/{len(stage1_articles):,} articles...")
-
-print(f"\n✓ Flood verification complete!")
-print(f"  Verified floods: {flood_verification_stats['verified']:,} ({flood_verification_stats['verified']/len(stage1_articles):.1%})")
-print(f"  Rejected: {flood_verification_stats['rejected']:,} ({flood_verification_stats['rejected']/len(stage1_articles):.1%})")
-
-# Save verified floods
-verified_floods_path = OUTPUT_DIR / 'stage2_verified_floods.json'
-with open(verified_floods_path, 'w') as f:
-    json.dump(verified_floods, f, indent=2)
-print(f"✓ Verified floods saved: {verified_floods_path}")
-
-# ============================================================================
-# STAGE 2.2: ONTARIO FILTERING
+# OPTIMIZE ONTARIO FILTERING MODEL
 # ============================================================================
 
 print("\n" + "="*70)
-print("STAGE 2.2: ONTARIO FILTERING")
+print("OPTIMIZING ONTARIO FILTERING MODEL")
 print("="*70)
 print("Goal: Identify floods that occurred in Ontario, Canada")
 
@@ -240,6 +178,9 @@ print(f"Baseline Score: {baseline_ontario.score:.2f}%")
 
 # Optimize
 print("\nOptimizing Ontario identification...")
+print(f"This will process {len(flood_positive_train)} training examples with {STAGE2_CONFIG['num_candidate_programs']} candidate programs.")
+print("This may take a while...\n")
+
 ontario_optimizer = dspy.BootstrapFewShotWithRandomSearch(
     metric=ontario_correctness_metric,
     max_bootstrapped_demos=STAGE2_CONFIG['max_bootstrapped_demos'],
@@ -277,74 +218,22 @@ print(f"  Precision: {precision:.2%} | Recall: {recall:.2%} | F1: {f1:.2%}")
 # Save optimized model
 model_path = MODELS_DIR / 'stage2_ontario_filter.json'
 optimized_ontario_checker.save(str(model_path))
-print(f"\n✓ Model saved: {model_path}")
-
-# ============================================================================
-# APPLY ONTARIO FILTERING TO VERIFIED FLOODS
-# ============================================================================
-
-print("\n" + "="*70)
-print("APPLYING ONTARIO FILTERING TO VERIFIED FLOODS")
-print("="*70)
-
-ontario_floods = []
-ontario_stats = {'ontario': 0, 'non_ontario': 0}
-
-print(f"Processing {len(verified_floods):,} verified floods...")
-
-for i, article in enumerate(verified_floods):
-    # Create DSPy example
-    example_input = dspy.Example(
-        article_text=article.get('full_text', '')
-    ).with_inputs('article_text')
-
-    # Predict
-    prediction = optimized_ontario_checker(**example_input.inputs())
-
-    # Add Ontario results to Stage 2 data
-    article['stage2']['is_ontario'] = prediction.is_ontario
-    article['stage2']['ontario_reasoning'] = prediction.reasoning
-
-    # Track Ontario floods
-    if prediction.is_ontario:
-        ontario_floods.append(article)
-        ontario_stats['ontario'] += 1
-    else:
-        ontario_stats['non_ontario'] += 1
-
-    # Progress indicator
-    if (i + 1) % 100 == 0:
-        print(f"  Processed {i+1:,}/{len(verified_floods):,} articles...")
-
-print(f"\n✓ Ontario filtering complete!")
-print(f"  Ontario floods: {ontario_stats['ontario']:,} ({ontario_stats['ontario']/len(verified_floods):.1%})")
-print(f"  Non-Ontario: {ontario_stats['non_ontario']:,} ({ontario_stats['non_ontario']/len(verified_floods):.1%})")
-
-# Save Ontario floods
-ontario_floods_path = OUTPUT_DIR / 'stage2_ontario_floods.json'
-with open(ontario_floods_path, 'w') as f:
-    json.dump(ontario_floods, f, indent=2)
-print(f"✓ Ontario floods saved: {ontario_floods_path}")
+print(f"\n✓ Ontario filtering model saved: {model_path}")
 
 # ============================================================================
 # FINAL SUMMARY
 # ============================================================================
 
 print("\n" + "="*70)
-print("STAGE 2 COMPLETE")
+print("OPTIMIZATION COMPLETE")
 print("="*70)
 
-print(f"\nPipeline Summary:")
-print(f"  Stage 1 input (BERT): {len(stage1_articles):,} articles")
-print(f"  After flood verification: {len(verified_floods):,} articles ({len(verified_floods)/len(stage1_articles):.1%})")
-print(f"  After Ontario filtering: {len(ontario_floods):,} articles ({len(ontario_floods)/len(stage1_articles):.1%})")
+print(f"\nOptimized models saved:")
+print(f"  {MODELS_DIR / 'stage2_flood_verified.json'}")
+print(f"  {MODELS_DIR / 'stage2_ontario_filter.json'}")
 
-print(f"\nOutput Files:")
-print(f"  Verified floods: {verified_floods_path}")
-print(f"  Ontario floods: {ontario_floods_path}")
-print(f"  Models: {MODELS_DIR / 'stage2_flood_verified.json'}")
-print(f"          {MODELS_DIR / 'stage2_ontario_filter.json'}")
+print(f"\nNext step:")
+print(f"  Run: python stage2/process.py")
+print(f"  This will apply the optimized models to all Stage 1 results.")
 
-print("\n" + "="*70)
-print("Ready for Stage 3: Location/Date Extraction")
-print("="*70 + "\n")
+print("\n" + "="*70 + "\n")

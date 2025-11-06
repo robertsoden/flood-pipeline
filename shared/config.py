@@ -30,8 +30,8 @@ STAGE1_CONFIG = {
 }
 
 STAGE2_CONFIG = {
-    'max_bootstrapped_demos': 8,
-    'max_labeled_demos': 8,
-    'num_candidate_programs': 30,
-    'num_threads': 1
+    'max_bootstrapped_demos': 4,
+    'max_labeled_demos': 4,
+    'num_candidate_programs': 15,
+    'num_threads': 4
 }
