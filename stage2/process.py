@@ -6,10 +6,28 @@ import sys
 from pathlib import Path
 import json
 import dspy
+import logging
+from datetime import datetime
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+# Setup logging
+LOGS_DIR = PROJECT_ROOT / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+log_file = LOGS_DIR / f'stage2_process_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()  # Also print to console
+    ]
+)
+logger = logging.getLogger(__name__)
+logger.info(f"Logging to: {log_file}")
 
 # Import from shared config
 from shared.config import MODEL_CONFIG, PROJECT_ROOT
@@ -83,7 +101,8 @@ print("\n3. Loading optimized models...")
 lm = dspy.LM(
     MODEL_CONFIG['name'],
     api_base=MODEL_CONFIG['api_base'],
-    api_key=MODEL_CONFIG['api_key']
+    api_key=MODEL_CONFIG['api_key'],
+    temperature=MODEL_CONFIG.get('temperature', 1.0)  # Use config temperature or default to 1.0
 )
 dspy.configure(lm=lm)
 
@@ -113,8 +132,9 @@ flood_verification_stats = {'verified': 0, 'rejected': 0}
 for i, article in enumerate(stage1_articles):
     # Create DSPy example
     example_input = dspy.Example(
+        title=article.get('title', ''),
         article_text=article.get('full_text', '')
-    ).with_inputs('article_text')
+    ).with_inputs('title', 'article_text')
 
     # Predict
     try:
@@ -174,8 +194,9 @@ ontario_stats = {'ontario': 0, 'non_ontario': 0}
 for i, article in enumerate(verified_floods):
     # Create DSPy example
     example_input = dspy.Example(
+        title=article.get('title', ''),
         article_text=article.get('full_text', '')
-    ).with_inputs('article_text')
+    ).with_inputs('title', 'article_text')
 
     # Predict
     try:

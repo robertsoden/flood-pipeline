@@ -6,10 +6,28 @@ import sys
 from pathlib import Path
 import json
 import dspy
+import logging
+from datetime import datetime
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+# Setup logging
+LOGS_DIR = PROJECT_ROOT / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+log_file = LOGS_DIR / f'stage2_optimize_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()  # Also print to console
+    ]
+)
+logger = logging.getLogger(__name__)
+logger.info(f"Logging to: {log_file}")
 
 # Import from shared config and stage2 modules
 from shared.config import (
@@ -68,7 +86,8 @@ print("\n2. Configuring DSPy...")
 lm = dspy.LM(
     MODEL_CONFIG['name'],
     api_base=MODEL_CONFIG['api_base'],
-    api_key=MODEL_CONFIG['api_key']
+    api_key=MODEL_CONFIG['api_key'],
+    temperature=MODEL_CONFIG.get('temperature', 1.0)  # Use config temperature or default to 1.0
 )
 dspy.configure(lm=lm)
 print(f"   ✓ LM configured: {MODEL_CONFIG['name']}")
@@ -101,20 +120,21 @@ print(f"Baseline Score: {baseline_flood.score:.2f}%")
 
 # Optimize
 print("\nOptimizing flood verification...")
-print(f"This will process {len(train_set)} training examples with {STAGE2_CONFIG['num_candidate_programs']} candidate programs.")
+print(f"Using MIPROv2 optimizer for better prompt engineering.")
 print("This may take a while...\n")
 
-flood_optimizer = dspy.BootstrapFewShotWithRandomSearch(
+flood_optimizer = dspy.MIPROv2(
     metric=extraction_precision_focused_metric,
-    max_bootstrapped_demos=STAGE2_CONFIG['max_bootstrapped_demos'],
-    max_labeled_demos=STAGE2_CONFIG['max_labeled_demos'],
-    num_candidate_programs=STAGE2_CONFIG['num_candidate_programs'],
-    num_threads=STAGE2_CONFIG['num_threads']
+    auto="light",  # "light" = ~8 trials, faster optimization
+    num_threads=STAGE2_CONFIG['num_threads'],
+    verbose=True
 )
 
 optimized_flood_verifier = flood_optimizer.compile(
     flood_verifier,
-    trainset=train_set
+    trainset=train_set,
+    max_bootstrapped_demos=STAGE2_CONFIG['max_bootstrapped_demos'],
+    max_labeled_demos=STAGE2_CONFIG['max_labeled_demos']
 )
 
 # Evaluate optimized
@@ -178,20 +198,21 @@ print(f"Baseline Score: {baseline_ontario.score:.2f}%")
 
 # Optimize
 print("\nOptimizing Ontario identification...")
-print(f"This will process {len(flood_positive_train)} training examples with {STAGE2_CONFIG['num_candidate_programs']} candidate programs.")
+print(f"Using MIPROv2 optimizer for better prompt engineering.")
 print("This may take a while...\n")
 
-ontario_optimizer = dspy.BootstrapFewShotWithRandomSearch(
+ontario_optimizer = dspy.MIPROv2(
     metric=ontario_correctness_metric,
-    max_bootstrapped_demos=STAGE2_CONFIG['max_bootstrapped_demos'],
-    max_labeled_demos=STAGE2_CONFIG['max_labeled_demos'],
-    num_candidate_programs=STAGE2_CONFIG['num_candidate_programs'],
-    num_threads=STAGE2_CONFIG['num_threads']
+    auto="light",  # "light" = ~8 trials, faster optimization
+    num_threads=STAGE2_CONFIG['num_threads'],
+    verbose=True
 )
 
 optimized_ontario_checker = ontario_optimizer.compile(
     ontario_checker,
-    trainset=flood_positive_train
+    trainset=flood_positive_train,
+    max_bootstrapped_demos=STAGE2_CONFIG['max_bootstrapped_demos'],
+    max_labeled_demos=STAGE2_CONFIG['max_labeled_demos']
 )
 
 # Evaluate optimized
