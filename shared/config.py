@@ -14,6 +14,10 @@ extraction_filepath = PROJECT_ROOT / 'stage1-bert' / 'data' / 'extraction_reserv
 train_filepath = PROJECT_ROOT / 'stage2' / 'data' / 'stage2_train_70pct.json'
 test_filepath = PROJECT_ROOT / 'stage2' / 'data' / 'stage2_test_30pct.json'
 
+# Stage 3 (Extraction) uses Ontario flood data only
+stage3_train_filepath = PROJECT_ROOT / 'stage3' / 'data' / 'stage3_train_70pct.json'
+stage3_test_filepath = PROJECT_ROOT / 'stage3' / 'data' / 'stage3_test_30pct.json'
+
 # Unlabeled data for inference
 unlabeled_filepath = PROJECT_ROOT / 'data' / 'articles_restructured.json'
 

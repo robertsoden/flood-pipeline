@@ -8,6 +8,8 @@ from .config import (
     train_filepath,
     test_filepath,
     extraction_filepath,
+    stage3_train_filepath,
+    stage3_test_filepath,
     unlabeled_filepath,
 
     # Model configuration
@@ -55,6 +57,8 @@ __all__ = [
     'train_filepath',
     'test_filepath',
     'extraction_filepath',
+    'stage3_train_filepath',
+    'stage3_test_filepath',
     'unlabeled_filepath',
 
     # Config - Model settings
