@@ -1,21 +1,43 @@
+"""
+Stage 2 Signatures: DSPy signatures for flood verification and Ontario filtering
+IMPROVED VERSION with clearer definitions and examples
+"""
 import dspy
 
-# Define signatures
 class floodIdentification(dspy.Signature):
-    title: str = dspy.InputField(desc="headline/title of the newspaper article")
-    article_text: str = dspy.InputField(desc="full text of newspaper article")
-    flood_mentioned: bool = dspy.OutputField(desc="whether article mentions a specific historical flood event. "
-             "Return True if the article mentions, references, or discusses an actual flood event that "
-             "affected people, communities, or infrastructure - regardless of whether flooding is the main topic. "
-             "This includes: (1) any mention of a real, specific flood (recent OR historical - from any time "
-             "period within human history), (2) floods as context for other stories, (3) references to past floods "
-             "in articles about other topics, (4) brief mentions or passing references to flood events. "
-             "Return False for: metaphorical usage of 'flood' (e.g., 'flood of immigrants'), theoretical/hypothetical "
-             "scenarios without a specific event, prehistoric/geological floods (ice age, ancient civilizations before "
-             "written records), purely technical discussions of flood management with no specific event mentioned, "
-             "or budget discussions that don't reference a specific flood event.")
+    """Determine if an article mentions a real flood event.
+    
+    Include any mention of actual flooding (past, present, or imminent), 
+    even if brief or mentioned in passing. The goal is to identify all 
+    articles that reference real flood events for historical research.
+    
+    Exclude only metaphorical usage or purely hypothetical discussions.
+    """
+    
+    article_text: str = dspy.InputField(desc="Full text of the news article")
+    title: str = dspy.InputField(desc="Article headline/title")
+    
+    flood_mentioned: bool = dspy.OutputField(
+        desc="True if article mentions any real flood event, even briefly. False only for metaphorical or purely hypothetical."
+    )
+    reasoning: str = dspy.OutputField(
+        desc="Explain what flood reference was found or why this is metaphorical/hypothetical."
+    )
+
 
 class isOntario(dspy.Signature):
-    title: str = dspy.InputField(desc="headline/title of the newspaper article")
-    article_text: str = dspy.InputField(desc="full text of newspaper article")
-    is_ontario: bool = dspy.OutputField(desc="whether the flood described occurred in Ontario, Canada")
+    """Determine if a flood event occurred in Ontario, Canada.
+    
+    Look for Ontario cities, regions, rivers, or explicit mentions of "Ontario".
+    Exclude other Canadian provinces and international locations.
+    """
+    
+    article_text: str = dspy.InputField(desc="Full text of the flood article")
+    title: str = dspy.InputField(desc="Article headline/title")
+    
+    is_ontario: bool = dspy.OutputField(
+        desc="True if the flood occurred in Ontario, Canada. False otherwise."
+    )
+    reasoning: str = dspy.OutputField(
+        desc="Explain what location indicators show this is/isn't in Ontario."
+    )

@@ -16,38 +16,39 @@ test_filepath = PROJECT_ROOT / 'stage2' / 'data' / 'stage2_test_30pct.json'
 # Unlabeled data for inference
 unlabeled_filepath = PROJECT_ROOT / 'data' / 'articles_restructured.json'
 
-
 # Model configuration
 MODEL_CONFIG = {
     'name': 'ollama_chat/qwen2.5:14b-instruct-q5_K_M',
     'api_base': 'http://localhost:11434',
     'api_key': '',
-    'temperature': 0.7   # Higher temperature for better optimization exploration
+    'temperature': 0.7    
 }
 
 # Optimization settings
-STAGE1_CONFIG = {    
-      'bert_model': 'distilbert-base-uncased',
-      'bert_model_dir': PROJECT_ROOT / 'models' / 'balanced_high_recall_iter0',
-      'batch_size': 16,
-      'learning_rate': 2e-5,
-      'num_epochs': 4,
-      'max_length': 512,
-      'threshold': 0.5,
-      'target_recall': 0.95
+STAGE1_CONFIG = {
+    'bert_model': 'distilbert-base-uncased',
+    'bert_model_dir': PROJECT_ROOT / 'models' / 'balanced_high_recall_iter0',
+    'batch_size': 16,
+    'learning_rate': 2e-5,
+    'num_epochs': 4,
+    'max_length': 512,
+    'threshold': 0.5,
+    'target_recall': 0.95
 }
 
+# Stage 2 Configuration
 STAGE2_CONFIG = {
-    'max_bootstrapped_demos': 3,       # Reduced for faster optimization
-    'max_labeled_demos': 3,            # Reduced for faster optimization
-    'num_candidate_programs': 10,      # Reduced for faster optimization
-    'num_threads': 8
+    'max_bootstrapped_demos': 5,
+    'max_labeled_demos': 5,
+    'num_candidate_programs': 5,
+    'num_threads': 12,
+    'train_sample_size': 100
 }
 
 STAGE3_CONFIG = {
-    'max_bootstrapped_demos': 3,       # Few-shot examples for optimization
-    'max_labeled_demos': 3,            # Labeled examples for optimization
+    'max_bootstrapped_demos': 3,       
+    'max_labeled_demos': 3,           
     'num_threads': 8,
-    'temperature_optimization': 0.7,   # Higher temperature for optimization exploration
-    'temperature_inference': 0.1       # Lower temperature for deterministic inference
+    'temperature_optimization': 0.7,   
+    'temperature_inference': 0.1      
 }
