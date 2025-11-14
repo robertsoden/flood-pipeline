@@ -10,13 +10,13 @@ class LocationExtraction(dspy.Signature):
     """
     Extract the location where a flood occurred from a newspaper article.
 
-    The location should be as specific as possible (city, town, township, river, etc.)
-    and should be in Ontario, Canada.
+    The location should be a city, town, township, region, or province in Ontario, Canada.
+    Do not include rivers, creeks, or other water bodies as the location.
     """
     title: str = dspy.InputField(desc="Article title")
     article_text: str = dspy.InputField(desc="Full article text")
 
-    location: str = dspy.OutputField(desc="Specific location where flood occurred (e.g., 'Thames River', 'Dover Township', 'Toronto')")
+    location: str = dspy.OutputField(desc="Specific location where flood occurred (e.g., 'Dover Township', 'Toronto', 'Ottawa Valley')")
     reasoning: str = dspy.OutputField(desc="Brief explanation of how location was identified")
 
 

@@ -100,7 +100,7 @@ logger.info(f"   ✓ Temperature: {temperature} (optimization mode)")
 # ============================================================================
 
 log_section(logger, "OPTIMIZING LOCATION EXTRACTION MODEL")
-logger.info("Goal: Extract specific location where flood occurred")
+logger.info("Goal: Extract city, town, region, or province where flood occurred")
 
 # Create predictor
 location_extractor = dspy.ChainOfThought(LocationExtraction)

@@ -19,8 +19,8 @@
       "label": "Location",
       "type": "text",
       "required": false,
-      "placeholder": "e.g., Dover Township, Thames River",
-      "description": "Where the flood took place (city, region, geographic area)"
+      "placeholder": "e.g., Dover Township, Toronto, Ottawa Valley",
+      "description": "Where the flood took place (city, town, township, region, or province)"
     },
     {
       "name": "impacts",
