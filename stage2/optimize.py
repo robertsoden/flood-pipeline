@@ -60,7 +60,8 @@ from shared.config import (
     test_filepath,
     MODEL_CONFIG,
     STAGE2_CONFIG,
-    PROJECT_ROOT
+    PROJECT_ROOT,
+    get_temperature
 )
 from shared.utils import prepare_data
 from stage2.signatures import floodIdentification, isOntario
@@ -79,12 +80,12 @@ print("Expected time: 20-30 minutes\n")
 MODELS_DIR = PROJECT_ROOT / 'models'
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Use 0.7 temperature during optimization (allows exploration)
-OPTIMIZATION_TEMPERATURE = 0.7
+# Get temperature for optimization (allows exploration)
+temperature = get_temperature(STAGE2_CONFIG, mode='optimization')
 
 print(f"Configuration:")
 print(f"  Model: {MODEL_CONFIG['name']}")
-print(f"  Temperature: {OPTIMIZATION_TEMPERATURE} (higher for optimization)")
+print(f"  Temperature: {temperature} (optimization mode)")
 print(f"  Max bootstrapped demos: {STAGE2_CONFIG['max_bootstrapped_demos']}")
 print(f"  Max labeled demos: {STAGE2_CONFIG['max_labeled_demos']}")
 print(f"  Num threads: {STAGE2_CONFIG['num_threads']}")
@@ -157,15 +158,17 @@ if metaphorical_count + planning_count + historical_count < 10:
 
 print("\n2. Configuring DSPy...")
 
-# Configure language model
+# Configure language model with optimization temperature
+temperature = get_temperature(STAGE2_CONFIG, mode='optimization')
 lm = dspy.LM(
     MODEL_CONFIG['name'],
     api_base=MODEL_CONFIG['api_base'],
     api_key=MODEL_CONFIG['api_key'],
-    temperature=OPTIMIZATION_TEMPERATURE
+    temperature=temperature
 )
 dspy.configure(lm=lm)
-print(f"   ✓ LM configured: {MODEL_CONFIG['name']} (temp={OPTIMIZATION_TEMPERATURE})")
+print(f"   ✓ LM configured: {MODEL_CONFIG['name']}")
+print(f"   ✓ Temperature: {temperature} (optimization mode)")
 
 # ============================================================================
 # OPTIMIZE FLOOD VERIFICATION MODEL
@@ -358,7 +361,7 @@ if os.getenv('OPENAI_API_KEY'):
         lm_gpt = dspy.LM(
             'openai/gpt-4o-mini',
             api_key=os.getenv('OPENAI_API_KEY'),
-            temperature=OPTIMIZATION_TEMPERATURE
+            temperature=temperature
         )
         dspy.configure(lm=lm_gpt)
         

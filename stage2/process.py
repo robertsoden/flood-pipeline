@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 logger.info(f"Logging to: {log_file}")
 
 # Import from shared config
-from shared.config import MODEL_CONFIG, PROJECT_ROOT
+from shared.config import MODEL_CONFIG, PROJECT_ROOT, STAGE2_CONFIG, get_temperature, get_config_value
 
 print("\n" + "="*70)
 print("STAGE 2: PROCESSING ARTICLES")
@@ -97,14 +97,16 @@ except FileNotFoundError:
 
 print("\n3. Loading optimized models...")
 
-# Configure language model
+# Configure language model with inference temperature for deterministic predictions
+temperature = get_temperature(STAGE2_CONFIG, mode='inference')
 lm = dspy.LM(
     MODEL_CONFIG['name'],
     api_base=MODEL_CONFIG['api_base'],
     api_key=MODEL_CONFIG['api_key'],
-    temperature=MODEL_CONFIG.get('temperature', 1.0)  # Use config temperature or default to 1.0
+    temperature=temperature
 )
 dspy.configure(lm=lm)
+print(f"   ✓ LM configured with temperature: {temperature} (inference mode)")
 
 # Load optimized models
 from stage2.signatures import floodIdentification, isOntario
@@ -126,6 +128,7 @@ print("STEP 1: FLOOD VERIFICATION")
 print("="*70)
 print(f"Processing {len(stage1_articles):,} articles...")
 
+progress_interval = get_config_value('progress_interval', STAGE2_CONFIG)
 verified_floods = []
 flood_verification_stats = {'verified': 0, 'rejected': 0}
 
@@ -164,7 +167,7 @@ for i, article in enumerate(stage1_articles):
         flood_verification_stats['rejected'] += 1
 
     # Progress indicator
-    if (i + 1) % 100 == 0:
+    if (i + 1) % progress_interval == 0:
         print(f"  Processed {i+1:,}/{len(stage1_articles):,} articles... "
               f"({flood_verification_stats['verified']} verified, "
               f"{flood_verification_stats['rejected']} rejected)")
@@ -220,7 +223,7 @@ for i, article in enumerate(verified_floods):
         ontario_stats['non_ontario'] += 1
 
     # Progress indicator
-    if (i + 1) % 100 == 0:
+    if (i + 1) % progress_interval == 0:
         print(f"  Processed {i+1:,}/{len(verified_floods):,} articles... "
               f"({ontario_stats['ontario']} Ontario, "
               f"{ontario_stats['non_ontario']} non-Ontario)")
