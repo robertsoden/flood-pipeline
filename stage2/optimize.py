@@ -35,7 +35,8 @@ from shared.config import (
     test_filepath,
     MODEL_CONFIG,
     STAGE2_CONFIG,
-    PROJECT_ROOT
+    PROJECT_ROOT,
+    get_temperature
 )
 from shared.utils import prepare_data
 from stage2.signatures import floodIdentification, isOntario
@@ -82,15 +83,17 @@ print(f"   Test examples: {len(test_set)}")
 
 print("\n2. Configuring DSPy...")
 
-# Configure language model
+# Configure language model with optimization temperature
+temperature = get_temperature(STAGE2_CONFIG, mode='optimization')
 lm = dspy.LM(
     MODEL_CONFIG['name'],
     api_base=MODEL_CONFIG['api_base'],
     api_key=MODEL_CONFIG['api_key'],
-    temperature=MODEL_CONFIG.get('temperature', 1.0)  # Use config temperature or default to 1.0
+    temperature=temperature
 )
 dspy.configure(lm=lm)
 print(f"   ✓ LM configured: {MODEL_CONFIG['name']}")
+print(f"   ✓ Temperature: {temperature} (optimization mode)")
 
 # ============================================================================
 # OPTIMIZE FLOOD VERIFICATION MODEL
