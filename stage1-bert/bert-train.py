@@ -30,58 +30,48 @@ from shared.config import (
     test_filepath,
     unlabeled_filepath,
     STAGE1_CONFIG,
+    PROJECT_ROOT,
+    get_config_value,
 )
+from shared.utils import prepare_data
+from shared.logging_config import setup_logger, log_section, log_config
 
-print("\n" + "="*70)
-print("HIGH-RECALL BERT TRAINING (BALANCED DATASET)")
-print("="*70)
+# Setup logging
+logger = setup_logger(__name__, 'stage1_train', PROJECT_ROOT)
+
+log_section(logger, "HIGH-RECALL BERT TRAINING (BALANCED DATASET)")
 
 # Configuration from shared config
-MODEL_NAME = STAGE1_CONFIG.get('bert_model', 'distilbert-base-uncased')
-TARGET_RECALL = STAGE1_CONFIG.get('target_recall', 0.95)
-BATCH_SIZE = STAGE1_CONFIG.get('batch_size', 16)
-MAX_LENGTH = STAGE1_CONFIG.get('max_length', 512)
-NUM_EPOCHS = STAGE1_CONFIG.get('num_epochs', 4)
-LEARNING_RATE = STAGE1_CONFIG.get('learning_rate', 2e-5)
+MODEL_NAME = STAGE1_CONFIG['bert_model']
+TARGET_RECALL = STAGE1_CONFIG['target_recall']
+BATCH_SIZE = STAGE1_CONFIG['batch_size']
+MAX_LENGTH = STAGE1_CONFIG['max_length']
+NUM_EPOCHS = STAGE1_CONFIG['num_epochs']
+LEARNING_RATE = STAGE1_CONFIG['learning_rate']
 
-# Training-specific settings
-PSEUDO_LABEL_CONFIDENCE = 0.95
-MAX_PSEUDO_LABELS_PER_ITERATION = 3000
-NUM_ITERATIONS = 3
-RECALL_WEIGHT_MULTIPLIER = 1.1  # Conservative for balanced data
+# Training-specific settings from config
+PSEUDO_LABEL_CONFIDENCE = get_config_value('pseudo_label_confidence', STAGE1_CONFIG)
+MAX_PSEUDO_LABELS_PER_ITERATION = get_config_value('max_pseudo_labels_per_iteration', STAGE1_CONFIG)
+NUM_ITERATIONS = get_config_value('num_iterations', STAGE1_CONFIG)
+RECALL_WEIGHT_MULTIPLIER = get_config_value('recall_weight_multiplier', STAGE1_CONFIG)
 
-print("Configuration:")
-print(f"  Model: {MODEL_NAME}")
-print(f"  Target recall: {TARGET_RECALL:.0%}")
-print(f"  Batch size: {BATCH_SIZE}")
-print(f"  Max length: {MAX_LENGTH}")
-print(f"  Num epochs: {NUM_EPOCHS}")
-print(f"  Learning rate: {LEARNING_RATE}")
-print(f"  Weight multiplier: {RECALL_WEIGHT_MULTIPLIER}x (conservative)")
-print(f"  Pseudo-label confidence: {PSEUDO_LABEL_CONFIDENCE}")
+config_display = {
+    'Model': MODEL_NAME,
+    'Target recall': f"{TARGET_RECALL:.0%}",
+    'Batch size': BATCH_SIZE,
+    'Max length': MAX_LENGTH,
+    'Num epochs': NUM_EPOCHS,
+    'Learning rate': LEARNING_RATE,
+    'Weight multiplier': f"{RECALL_WEIGHT_MULTIPLIER}x",
+    'Pseudo-label confidence': PSEUDO_LABEL_CONFIDENCE,
+}
+log_config(logger, config_display, "Configuration")
 
 # Create output directories
 MODELS_DIR = PROJECT_ROOT / 'models'
 RESULTS_DIR = PROJECT_ROOT / 'results'
 MODELS_DIR.mkdir(exist_ok=True, parents=True)
 RESULTS_DIR.mkdir(exist_ok=True, parents=True)
-
-
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-def prepare_data(raw_data):
-    """Convert raw JSON to DSPy Examples"""
-    examples = []
-    for item in raw_data:
-        ex = dspy.Example(
-            article_text=item.get('full_text', item.get('article_text', '')),
-            publication_date=item.get('publication_date', ''),
-            flood_mentioned=item.get('flood_mentioned', False)
-        ).with_inputs('article_text')
-        examples.append(ex)
-    return examples
 
 
 # ============================================================================
@@ -161,12 +151,18 @@ def compute_recall_focused_metrics(eval_pred):
     }
 
 
-def find_threshold_for_target_recall(probs, labels, target_recall=0.95, min_threshold=0.10):
+def find_threshold_for_target_recall(probs, labels, target_recall=0.95, min_threshold=None):
     """Find threshold that achieves target recall"""
+    if min_threshold is None:
+        min_threshold = get_config_value('threshold_min', STAGE1_CONFIG)
+
+    threshold_max = get_config_value('threshold_max', STAGE1_CONFIG)
+    threshold_step = get_config_value('threshold_step', STAGE1_CONFIG)
+
     best_threshold = None
     best_precision = 0
-    
-    for threshold in np.arange(0.50, min_threshold, -0.01):
+
+    for threshold in np.arange(threshold_max, min_threshold, -threshold_step):
         pred_labels = (probs > threshold).astype(int)
         
         tp = np.sum((labels == 1) & (pred_labels == 1))
@@ -384,10 +380,12 @@ def generate_pseudo_labels(model, tokenizer, unlabeled_pool, confidence_threshol
     device = model.device
     all_probs = []
     
+    batch_progress_interval = get_config_value('batch_progress_interval', STAGE1_CONFIG)
+
     print("Predicting on unlabeled data...")
     for i in range(0, len(texts), BATCH_SIZE):
         batch_texts = texts[i:i+BATCH_SIZE]
-        
+
         with torch.no_grad():
             inputs = tokenizer(
                 batch_texts, return_tensors='pt', truncation=True,
@@ -397,8 +395,8 @@ def generate_pseudo_labels(model, tokenizer, unlabeled_pool, confidence_threshol
             outputs = model(**inputs)
             probs = torch.softmax(outputs.logits, dim=1)[:, 1].cpu().numpy()
             all_probs.extend(probs)
-        
-        if (i + BATCH_SIZE) % 4000 == 0:
+
+        if (i + BATCH_SIZE) % batch_progress_interval == 0:
             print(f"  Processed {min(i+BATCH_SIZE, len(texts)):,}/{len(texts):,}")
     
     print(f"✓ Complete!")

@@ -16,11 +16,13 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import from shared config
-from shared import unlabeled_filepath, STAGE1_CONFIG
+from shared import unlabeled_filepath, STAGE1_CONFIG, PROJECT_ROOT
+from shared.logging_config import setup_logger, log_section, log_config
 
-print("\n" + "="*70)
-print("BERT INFERENCE - CLASSIFY COMPLETE DATASET")
-print("="*70)
+# Setup logging
+logger = setup_logger(__name__, 'stage1_inference', PROJECT_ROOT)
+
+log_section(logger, "BERT INFERENCE - CLASSIFY COMPLETE DATASET")
 
 # ============================================================================
 # CONFIGURATION
@@ -33,11 +35,13 @@ INPUT_FILE = unlabeled_filepath
 OUTPUT_DIR = PROJECT_ROOT / 'results'
 BATCH_SIZE = STAGE1_CONFIG.get('batch_size', 32)
 
-print(f"\nConfiguration:")
-print(f"  Model: {MODEL_PATH}")
-print(f"  Input: {INPUT_FILE}")
-print(f"  Output directory: {OUTPUT_DIR}")
-print(f"  Batch size: {BATCH_SIZE}")
+config_display = {
+    'Model': str(MODEL_PATH),
+    'Input': str(INPUT_FILE),
+    'Output directory': str(OUTPUT_DIR),
+    'Batch size': BATCH_SIZE,
+}
+log_config(logger, config_display, "Configuration")
 
 # Create output directory
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
