@@ -34,10 +34,14 @@ GLOBAL_DEFAULTS = {
 }
 
 # Model configuration
+# Options:
+#   - 'ollama_chat/qwen2.5:14b-instruct-q5_K_M' (local, free, slower)
+#   - 'bedrock/us.meta.llama3-1-8b-instruct-v1:0' (AWS, ~$0.22/M tokens)
+#   - 'bedrock/us.anthropic.claude-3-5-haiku-20241022-v1:0' (AWS, requires Anthropic use case form)
 MODEL_CONFIG = {
-    'name': 'ollama_chat/qwen2.5:14b-instruct-q5_K_M',
-    'api_base': 'http://localhost:11434',
-    'api_key': '',
+    'name': 'anthropic/claude-sonnet-4-20250514',
+    'api_base': None,
+    'api_key': None,  # Uses ANTHROPIC_API_KEY env variable
 }
 
 # Optimization settings
@@ -62,7 +66,7 @@ STAGE2_CONFIG = {
     'max_bootstrapped_demos': 3,       # Reduced for faster optimization
     'max_labeled_demos': 3,            # Reduced for faster optimization
     'num_candidate_programs': 10,      # Reduced for faster optimization
-    'num_threads': 8,
+    'num_threads': 2,                  # Reduced to avoid Anthropic rate limits
     'train_sample_size': 100,
     'temperature': 'temperature_optimization',  # Use optimization temperature
 }

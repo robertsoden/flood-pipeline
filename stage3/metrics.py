@@ -1,120 +1,190 @@
 """
-Evaluation metrics for Stage 3: Location and Date Extraction
-
-Metrics to evaluate the quality of extracted location and date information.
+Stage 3 Metrics: Evaluate location and date extraction with fuzzy matching
 """
 import dspy
-from typing import List
+import re
+from difflib import SequenceMatcher
 
+def normalize_location(loc):
+    """Normalize location string for comparison"""
+    if not loc:
+        return ""
+    # Convert to lowercase
+    loc = loc.lower().strip()
+    # Remove common suffixes and punctuation
+    loc = re.sub(r',?\s*(ont\.|ontario|canada)\s*', ' ', loc)
+    loc = re.sub(r'[,;.]', ' ', loc)
+    # Normalize whitespace
+    loc = ' '.join(loc.split())
+    return loc
 
-def location_extraction_metric(example: dspy.Example, prediction: dspy.Example, trace=None) -> float:
+def extract_date_components(date_str):
+    """Extract year, month from various date formats"""
+    if not date_str:
+        return None, None
+
+    date_str = date_str.lower().strip()
+
+    # Extract 4-digit year
+    year_match = re.search(r'\b(19\d{2}|20\d{2})\b', date_str)
+    year = year_match.group(1) if year_match else None
+
+    # Extract month (name or number)
+    month = None
+    month_names = ['january', 'february', 'march', 'april', 'may', 'june',
+                   'july', 'august', 'september', 'october', 'november', 'december']
+    month_abbr = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
+                  'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+
+    for i, name in enumerate(month_names):
+        if name in date_str:
+            month = str(i + 1).zfill(2)
+            break
+
+    if not month:
+        for i, abbr in enumerate(month_abbr):
+            if abbr in date_str:
+                month = str(i + 1).zfill(2)
+                break
+
+    # Try to find MM format or M format
+    if not month:
+        month_match = re.search(r'\b(0?[1-9]|1[0-2])\b', date_str)
+        if month_match:
+            month = month_match.group(1).zfill(2)
+
+    return year, month
+
+def fuzzy_location_match(pred, truth):
     """
-    Evaluate location extraction quality.
-
-    Uses fuzzy matching since exact string match is too strict for location names
-    (e.g., "Thames River" vs "Thames river" vs "the Thames River").
-
-    Returns:
-        1.0 if locations match (case-insensitive, normalized)
-        0.0 otherwise
+    Fuzzy match locations with multiple strategies.
+    Returns score between 0 and 1.
     """
-    # Normalize locations for comparison
-    def normalize_location(loc: str) -> str:
-        """Normalize location string for comparison"""
-        if not loc:
-            return ""
-        # Convert to lowercase, remove extra whitespace and common articles
-        loc = loc.lower().strip()
-        for article in [' the ', ' a ', ' an ']:
-            loc = loc.replace(article, ' ')
-        # Remove leading/trailing articles
-        for article in ['the ', 'a ', 'an ']:
-            if loc.startswith(article):
-                loc = loc[len(article):]
-        # Normalize whitespace
-        return ' '.join(loc.split())
+    # Handle multi-location ground truth (semicolon-separated)
+    if ';' in truth:
+        # Try matching against any of the locations
+        truth_locs = [loc.strip() for loc in truth.split(';')]
+        scores = [fuzzy_location_match(pred, loc) for loc in truth_locs]
+        return max(scores) if scores else 0.0
 
-    true_location = normalize_location(example.location)
-    pred_location = normalize_location(prediction.location)
+    pred_norm = normalize_location(pred)
+    truth_norm = normalize_location(truth)
 
-    # Empty locations
-    if not true_location and not pred_location:
-        return 1.0
-    if not true_location or not pred_location:
+    # Handle empty normalized values (e.g., "Canada" becomes empty)
+    # Give partial credit if prediction has content
+    if not truth_norm:
+        if pred_norm:
+            return 0.5  # Some location vs vague ground truth
+        return 0.0
+
+    if not pred_norm:
         return 0.0
 
     # Exact match after normalization
-    if true_location == pred_location:
+    if pred_norm == truth_norm:
         return 1.0
 
-    # Partial match: check if one contains the other (handles "Toronto" vs "Toronto area")
-    if true_location in pred_location or pred_location in true_location:
-        return 0.8  # Partial credit
+    # Substring match (either direction)
+    if pred_norm in truth_norm or truth_norm in pred_norm:
+        return 0.9
+
+    # Token overlap (for compound locations like "White River" vs "White River, Ontario")
+    pred_tokens = set(pred_norm.split())
+    truth_tokens = set(truth_norm.split())
+
+    # Remove common stop words
+    stop_words = {'the', 'of', 'and', 'in', 'at', 'on', 'near'}
+    pred_tokens -= stop_words
+    truth_tokens -= stop_words
+
+    if pred_tokens and truth_tokens:
+        overlap = len(pred_tokens & truth_tokens)
+        union = len(pred_tokens | truth_tokens)
+        if overlap > 0:
+            jaccard = overlap / union
+            if jaccard >= 0.5:  # At least 50% token overlap
+                return 0.7 + (jaccard - 0.5) * 0.6  # Scale 0.7-1.0
+
+    # Fuzzy string matching (for typos, slight variations)
+    similarity = SequenceMatcher(None, pred_norm, truth_norm).ratio()
+    if similarity >= 0.8:
+        return 0.6 + (similarity - 0.8) * 2  # Scale 0.6-1.0
+    elif similarity >= 0.6:
+        return 0.3 + (similarity - 0.6) * 1.5  # Scale 0.3-0.6
 
     return 0.0
 
-
-def date_extraction_metric(example: dspy.Example, prediction: dspy.Example, trace=None) -> float:
+def fuzzy_date_match(pred, truth):
     """
-    Evaluate date extraction quality.
-
-    Handles various date formats (year only, month+year, season+year, etc.)
-
-    Returns:
-        1.0 if dates match
-        0.5 if years match but months/seasons differ
-        0.0 otherwise
+    Fuzzy match dates - accept if year+month match or just year matches.
+    Returns score between 0 and 1.
     """
-    # Normalize dates for comparison
-    def normalize_date(date: str) -> str:
-        """Normalize date string for comparison"""
-        if not date:
-            return ""
-        # Convert to lowercase, remove extra whitespace
-        date = date.lower().strip()
-        # Normalize whitespace
-        return ' '.join(date.split())
+    pred_year, pred_month = extract_date_components(pred)
+    truth_year, truth_month = extract_date_components(truth)
 
-    def extract_year(date: str) -> str:
-        """Extract 4-digit year from date string"""
-        import re
-        match = re.search(r'\b(19\d{2}|20\d{2})\b', date)
-        return match.group(1) if match else ""
-
-    true_date = normalize_date(example.flood_date)
-    pred_date = normalize_date(prediction.flood_date)
-
-    # Empty dates
-    if not true_date and not pred_date:
-        return 1.0
-    if not true_date or not pred_date:
+    if not pred_year or not truth_year:
+        # One or both missing - can't match
         return 0.0
 
-    # Exact match
-    if true_date == pred_date:
-        return 1.0
+    # Year must match
+    if pred_year != truth_year:
+        return 0.0
 
-    # Year-only match (partial credit)
-    true_year = extract_year(true_date)
-    pred_year = extract_year(pred_date)
+    # Year matches - give base score
+    score = 0.6
 
-    if true_year and pred_year and true_year == pred_year:
-        return 0.5  # Partial credit for correct year
+    # Bonus if month also matches
+    if pred_month and truth_month and pred_month == truth_month:
+        score = 1.0
+    elif pred_month and truth_month:
+        # Month extracted but doesn't match
+        score = 0.7
 
-    return 0.0
+    return score
 
-
-def combined_extraction_metric(example: dspy.Example, prediction: dspy.Example, trace=None) -> float:
+def location_extraction_metric(example, prediction, trace=None):
     """
-    Combined metric for both location and date extraction.
+    Metric for evaluating location and date extraction with fuzzy matching.
 
-    Returns average score (0-100%) across both extractions.
+    For labeled data with known locations/dates:
+    - Fuzzy matches location (handles variations, multi-location ground truth)
+    - Fuzzy matches dates (accepts year+month, or just year)
+
+    Returns score between 0 and 1.
     """
-    location_score = location_extraction_metric(example, prediction, trace)
-    date_score = date_extraction_metric(example, prediction, trace)
+    score = 0.0
 
-    # Average the two scores
-    combined_score = (location_score + date_score) / 2.0
+    # Check if we have ground truth
+    if not hasattr(example, 'location') or not example.location:
+        # No ground truth - can't evaluate, skip this example
+        return None
 
-    # Convert to percentage for display
-    return combined_score * 100
+    # Location matching with fuzzy matching (70% of score)
+    if hasattr(prediction, 'location') and prediction.location:
+        pred_loc = prediction.location
+        true_loc = example.location
+
+        # Skip if prediction is explicitly "unknown"
+        if pred_loc.lower() in ['unknown', 'not specified', 'none', 'n/a']:
+            score += 0.0
+        else:
+            loc_score = fuzzy_location_match(pred_loc, true_loc)
+            score += loc_score * 0.7
+
+    # Date matching with fuzzy matching (30% of score)
+    if hasattr(example, 'flood_date') and example.flood_date:
+        if hasattr(prediction, 'flood_date') and prediction.flood_date:
+            pred_date = prediction.flood_date
+            true_date = example.flood_date
+
+            # Skip if prediction is explicitly "unknown"
+            if pred_date.lower() in ['unknown', 'not specified', 'date not specified', 'none', 'n/a']:
+                score += 0.0
+            else:
+                date_score = fuzzy_date_match(pred_date, true_date)
+                score += date_score * 0.3
+    else:
+        # No date ground truth, give partial credit
+        score += 0.15
+
+    return score

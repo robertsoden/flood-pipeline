@@ -1,89 +1,96 @@
-# Flood History of Ontario
+# Ontario Flood Article Extraction Pipeline
 
-Multi-stage pipeline to identify and extract flood information from 50,000+ Ontario newspaper articles.
+NLP pipeline to identify and extract flood information from 50,000+ Ontario newspaper articles.
 
-## Pipeline Overview
+## Overview
 
-**Stage 1 (BERT):** High-recall filter (>95%) to exclude non-flood articles  
-**Stage 2 (Local LLM):** High-precision flood verification + Ontario location check  
-**Stage 3 (Local LLM + Geocoding):** Extract flood date/location, geocode to lat/lon  
-**Stage 4 (External LLM):** Extract detailed flood impacts  
+This pipeline extracts **when** and **where** flood events occurred from historical newspaper articles. It produces geocoded flood records that can be integrated with other flood databases for triangulation and analysis.
+
+### Results
+
+| Stage | Description | Output |
+|-------|-------------|--------|
+| Stage 1 | BERT classification | 5,247 flood candidates |
+| Stage 2 | LLM flood verification | 2,290 confirmed Ontario floods |
+| Stage 3 | NER + Geocoding | 1,940 geocoded articles |
 
 ## Quick Start
 
 ```bash
-# Install dependencies
+# Setup
+python -m venv env
+source env/bin/activate
 pip install -r requirements.txt
 
-# Configure (copy and edit)
-cp .env.example .env
-
-# Access Data
-This assumes access to our archive of newspaper articles which is not stored in github
+# Configure API keys
+cp env.example .env
+# Edit .env with MAPBOX_TOKEN and ANTHROPIC_API_KEY
 
 # Run pipeline
-python stage1-bert/bert-train.py      # Train BERT (or use pre-trained)
-python stage1-bert/bert-inference.py  # Filter 50K articles
-python stage2/verify.py               # Verify floods (to be implemented)
-python stage3/extract.py              # Extract location/date (to be implemented)
-python stage4/impacts.py              # Extract impacts (to be implemented)
+python stage1-bert/bert-inference.py       # BERT filter
+python stage2/process.py                   # LLM verification
+python stage3/process_ner.py               # NER extraction
+python stage3/process_llm_verify.py        # LLM date/location verification
+python stage3/geocode.py                   # Geocode to lat/lon
+```
+
+## Pipeline Architecture
+
+```
+Raw Articles (50K) → BERT Filter → LLM Verify → NER + Geocode → Geocoded Floods
+                     (Stage 1)     (Stage 2)      (Stage 3)
+```
+
+**Stage 1 (BERT):** High-recall filter (97.7%) using semi-supervised learning. Removes clearly non-flood articles.
+
+**Stage 2 (LLM):** Verifies actual flood events (not just mentions) and confirms Ontario location using Claude.
+
+**Stage 3 (NER + Geocoding):** Extracts flood dates and locations using spaCy NER, verifies/corrects with LLM, geocodes to coordinates via Mapbox.
+
+## Output Format
+
+Final output in `results/stage3_geocoded.json`:
+
+```json
+{
+  "article_id": "12345",
+  "full_text": "Flooding hit Toronto...",
+  "publication_date": "2013-07-08",
+  "stage3": {
+    "location": "Toronto",
+    "flood_date": "July 2013",
+    "latitude": 43.6532,
+    "longitude": -79.3832,
+    "date_confidence": "high"
+  }
+}
 ```
 
 ## Project Structure
 
 ```
-shared/              # Shared config and utilities
-  ├── config.py      # All configuration (paths, models, settings)
-  └── utils.py       # Shared functions (JSON I/O, logging, caching)
-
-stage1-bert/         # BERT-based filtering (✅ Complete)
-  ├── bert-train.py
-  ├── bert-inference.py
-  └── data/
-
-stage2/              # LLM flood verification (🔄 In progress)
-stage3/              # Location/date extraction (🔄 To do)
-stage4/              # Impact extraction (🔄 To do)
-
-annotations/         # Manual labeling tool
-data/                # Raw articles (not in git)
-models/              # Trained models (not in git)
-results/             # Pipeline outputs (not in git)
+flood_pipeline/
+├── shared/           # Config and utilities
+├── stage1-bert/      # BERT classification
+├── stage2/           # LLM flood verification
+├── stage3/           # NER + geocoding
+├── results/          # Pipeline outputs (not in git)
+├── models/           # Trained models (not in git)
+└── data/             # Raw articles (not in git)
 ```
 
-## Data Flow
+## Requirements
 
-Articles are progressively enriched through each stage:
+- Python 3.10+
+- BERT model for Stage 1 (trained locally)
+- Anthropic API key for Claude (Stages 2-3)
+- Mapbox API token for geocoding
 
-```
-Raw articles (50K) 
-  → Stage 1: Filter to ~5-15K candidates
-  → Stage 2: Verify ~2-8K confirmed Ontario floods  
-  → Stage 3: Geolocate floods with dates
-  → Stage 4: Extract detailed impacts
-```
+## Integration
 
-Each stage adds a `stageN` key to article JSON with its results.
-
-## Configuration
-
-All settings in `shared/config.py`:
-- File paths
-- Model configurations (Ollama, BERT, external APIs)
-- Stage-specific parameters
-- Geocoding settings
-
-See `.env.example` for required environment variables (API keys, etc.)
-
+Output feeds into the [flood_mcp](../flood_mcp) triangulation system where articles are combined with database records (CDD, NRCAN, OEM, Conservation Ontario) to build a comprehensive flood history.
 
 ## Documentation
 
-- `PROJECT_CONTEXT.md` - Comprehensive project documentation
-- `VERSION_CONTROL_GUIDE.md` - Git best practices
-- `DATA_README.md` - Data sources and download instructions
-
-## Status
-
-- ✅ Stage 1: BERT filtering complete
-- 🔄 Stage 2-4: In development
-- 📊 Data: 580 labeled examples, 50K unlabeled articles
+- `CLAUDE.md` - Detailed technical documentation for AI assistants
+- `PIPELINE_STATUS.md` - Current processing status and metrics

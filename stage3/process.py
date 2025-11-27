@@ -1,214 +1,231 @@
 """
-Stage 3 Processing: Apply optimized extraction models to Stage 2 results
-Run this after optimize.py to extract location and date from all verified Ontario floods.
+Stage 3 Processing: Extract flood locations and dates from Ontario floods
+Run this after Stage 2 to extract location and date information.
 """
 import sys
 from pathlib import Path
 import json
 import dspy
+import logging
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Import from shared config
-from shared.config import (
-    MODEL_CONFIG,
-    PROJECT_ROOT,
-    STAGE3_CONFIG,
-    get_temperature,
-    get_config_value
-)
-from shared.logging_config import setup_logger, log_section, log_config
-
 # Setup logging
-logger = setup_logger(__name__, 'stage3_process', PROJECT_ROOT)
+LOGS_DIR = PROJECT_ROOT / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+log_file = LOGS_DIR / f'stage3_process_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
 
-log_section(logger, "STAGE 3: PROCESSING ARTICLES")
-logger.info("Applying optimized extraction models to Stage 2 results.\n")
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+logger.info(f"Logging to: {log_file}")
+
+# Import from shared config
+from shared.config import MODEL_CONFIG, PROJECT_ROOT, STAGE3_CONFIG, get_temperature, get_config_value
+
+print("\n" + "="*70)
+print("STAGE 3: LOCATION & DATE EXTRACTION")
+print("="*70)
+print("\nExtracting flood locations and dates from Ontario floods.\n")
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
-STAGE2_RESULTS = PROJECT_ROOT / 'results' / 'stage2_ontario_floods.json'
+STAGE2_OUTPUT = PROJECT_ROOT / 'results' / 'stage2_ontario_floods.json'
 OUTPUT_DIR = PROJECT_ROOT / 'results'
 MODELS_DIR = PROJECT_ROOT / 'models'
 
-LOCATION_MODEL_PATH = MODELS_DIR / 'stage3_location_extractor.json'
-DATE_MODEL_PATH = MODELS_DIR / 'stage3_date_extractor.json'
+EXTRACTION_MODEL_PATH = MODELS_DIR / 'stage3_location_extraction.json'
 
 # Create output directories
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-config_display = {
-    'Stage 2 input': str(STAGE2_RESULTS),
-    'Location model': str(LOCATION_MODEL_PATH),
-    'Date model': str(DATE_MODEL_PATH),
-    'LLM': MODEL_CONFIG['name'],
-}
-log_config(logger, config_display, "Configuration")
+print(f"Configuration:")
+print(f"  Stage 2 input: {STAGE2_OUTPUT}")
+print(f"  Extraction model: {EXTRACTION_MODEL_PATH}")
+print(f"  LLM: {MODEL_CONFIG['name']}")
 
 # ============================================================================
-# CHECK FOR OPTIMIZED MODELS
+# CHECK FOR OPTIMIZED MODEL
 # ============================================================================
 
-logger.info("\n1. Checking for optimized models...")
+print("\n1. Checking for optimized model...")
 
-if not LOCATION_MODEL_PATH.exists():
-    logger.error(f"   ❌ ERROR: Location extraction model not found!")
-    logger.error(f"   Please run: python stage3/optimize.py first")
-    sys.exit(1)
-
-if not DATE_MODEL_PATH.exists():
-    logger.error(f"   ❌ ERROR: Date extraction model not found!")
-    logger.error(f"   Please run: python stage3/optimize.py first")
-    sys.exit(1)
-
-logger.info(f"   ✓ Found location extraction model")
-logger.info(f"   ✓ Found date extraction model")
+if not EXTRACTION_MODEL_PATH.exists():
+    print(f"   ⚠️  WARNING: Extraction model not found!")
+    print(f"   Will use baseline model (not optimized)")
+    print(f"   For better results, run: python stage3/optimize.py")
+    use_optimized = False
+else:
+    print(f"   ✓ Found optimized extraction model")
+    use_optimized = True
 
 # ============================================================================
 # LOAD STAGE 2 RESULTS
 # ============================================================================
 
-logger.info("\n2. Loading Stage 2 Ontario flood results...")
+print("\n2. Loading Stage 2 Ontario floods...")
 
 try:
-    with open(STAGE2_RESULTS, 'r') as file:
-        stage2_articles = json.load(file)
-    logger.info(f"   ✓ Loaded {len(stage2_articles):,} Ontario flood articles from Stage 2")
+    with open(STAGE2_OUTPUT, 'r') as file:
+        ontario_floods = json.load(file)
+    print(f"   ✓ Loaded {len(ontario_floods):,} Ontario flood articles")
 except FileNotFoundError:
-    logger.error(f"   ❌ ERROR: Stage 2 results not found at {STAGE2_RESULTS}")
-    logger.error(f"   Please run stage2/process.py first")
+    print(f"   ❌ ERROR: Stage 2 results not found at {STAGE2_OUTPUT}")
+    print(f"   Please run stage2/process.py first")
     sys.exit(1)
 
 # ============================================================================
-# CONFIGURE DSPY AND LOAD MODELS
+# CONFIGURE DSPY AND LOAD MODEL
 # ============================================================================
 
-logger.info("\n3. Loading optimized models...")
+print("\n3. Loading extraction model...")
 
-# Configure language model with inference temperature for deterministic predictions
+# Configure language model with inference temperature
 temperature = get_temperature(STAGE3_CONFIG, mode='inference')
-lm = dspy.LM(
-    MODEL_CONFIG['name'],
-    api_base=MODEL_CONFIG['api_base'],
-    api_key=MODEL_CONFIG['api_key'],
-    temperature=temperature
-)
+
+# Build LM kwargs
+lm_kwargs = {'temperature': temperature}
+if MODEL_CONFIG.get('api_base'):
+    lm_kwargs['api_base'] = MODEL_CONFIG['api_base']
+if MODEL_CONFIG.get('api_key'):
+    lm_kwargs['api_key'] = MODEL_CONFIG['api_key']
+
+lm = dspy.LM(MODEL_CONFIG['name'], **lm_kwargs)
 dspy.configure(lm=lm)
-logger.info(f"   ✓ LM configured with temperature: {temperature} (inference mode)")
+print(f"   ✓ LM configured: {MODEL_CONFIG['name']} (temperature={temperature})")
 
-# Load optimized models
-from stage3.signatures import LocationExtraction, DateExtraction
+# Load extraction model
+from stage3.signatures import FloodLocationExtraction
 
-location_extractor = dspy.ChainOfThought(LocationExtraction)
-location_extractor.load(str(LOCATION_MODEL_PATH))
-logger.info(f"   ✓ Loaded location extraction model")
-
-date_extractor = dspy.ChainOfThought(DateExtraction)
-date_extractor.load(str(DATE_MODEL_PATH))
-logger.info(f"   ✓ Loaded date extraction model")
+extractor = dspy.ChainOfThought(FloodLocationExtraction)
+if use_optimized:
+    extractor.load(str(EXTRACTION_MODEL_PATH))
+    print(f"   ✓ Loaded optimized extraction model")
+else:
+    print(f"   ℹ️  Using baseline model (not optimized)")
 
 # ============================================================================
-# EXTRACT LOCATION AND DATE
+# EXTRACT LOCATIONS AND DATES
 # ============================================================================
 
-log_section(logger, "EXTRACTING LOCATION AND DATE")
-logger.info(f"Processing {len(stage2_articles):,} articles...\n")
+print("\n" + "="*70)
+print("EXTRACTING LOCATIONS AND DATES")
+print("="*70)
+print(f"Processing {len(ontario_floods):,} Ontario flood articles...")
+
+# Get num_threads from config (default to 8 as specified in STAGE3_CONFIG)
+num_threads = get_config_value('num_threads', STAGE3_CONFIG) or 8
+print(f"Using {num_threads} parallel threads for extraction\n")
 
 progress_interval = get_config_value('progress_interval', STAGE3_CONFIG)
-extraction_stats = {
-    'total': len(stage2_articles),
-    'location_extracted': 0,
-    'date_extracted': 0,
-    'both_extracted': 0,
-    'errors': 0
-}
+extracted_articles = [None] * len(ontario_floods)  # Pre-allocate to maintain order
+stats = {'extracted': 0, 'no_location': 0, 'no_date': 0, 'processed': 0}
+stats_lock = Lock()  # Thread-safe statistics
 
-for i, article in enumerate(stage2_articles):
+def process_article(i, article):
+    """Process a single article and return results"""
     # Create DSPy example
     example_input = dspy.Example(
         title=article.get('title', ''),
-        article_text=article.get('full_text', ''),
-        publication_date=article.get('publication_date', '')
-    ).with_inputs('title', 'article_text', 'publication_date')
+        article_text=article.get('full_text', '')
+    ).with_inputs('title', 'article_text')
 
-    # Initialize stage3 results
-    article['stage3'] = {}
-
-    # Extract location
+    # Extract
     try:
-        location_pred = location_extractor(**example_input.inputs())
-        article['stage3']['location'] = location_pred.location
-        article['stage3']['location_reasoning'] = location_pred.reasoning
+        prediction = extractor(**example_input.inputs())
 
-        if location_pred.location.strip():
-            extraction_stats['location_extracted'] += 1
+        # Add Stage 3 results to article
+        article['stage3'] = {
+            'location': prediction.location,
+            'flood_date': prediction.flood_date,
+            'reasoning': prediction.reasoning,
+        }
+
+        # Calculate stats
+        has_location = prediction.location and prediction.location.lower() not in ['unknown', 'not specified', 'none']
+        has_date = prediction.flood_date and prediction.flood_date.lower() not in ['unknown', 'not specified', 'none']
+
+        return i, article, has_location, has_date, None
+
     except Exception as e:
-        logger.warning(f"   ⚠ Error extracting location from article {i}: {e}")
-        article['stage3']['location'] = ""
-        article['stage3']['location_reasoning'] = f"Error: {str(e)}"
-        extraction_stats['errors'] += 1
+        logger.error(f"Error processing article {i}: {e}")
+        # Keep article but mark as unprocessed
+        article['stage3'] = {
+            'location': 'ERROR',
+            'flood_date': 'ERROR',
+            'reasoning': f"Error: {str(e)}",
+        }
+        return i, article, False, False, str(e)
 
-    # Extract date
-    try:
-        date_pred = date_extractor(**example_input.inputs())
-        article['stage3']['flood_date'] = date_pred.flood_date
-        article['stage3']['date_reasoning'] = date_pred.reasoning
+# Process articles in parallel
+with ThreadPoolExecutor(max_workers=num_threads) as executor:
+    # Submit all articles for processing
+    futures = {executor.submit(process_article, i, article): i
+               for i, article in enumerate(ontario_floods)}
 
-        if date_pred.flood_date.strip():
-            extraction_stats['date_extracted'] += 1
-    except Exception as e:
-        logger.warning(f"   ⚠ Error extracting date from article {i}: {e}")
-        article['stage3']['flood_date'] = ""
-        article['stage3']['date_reasoning'] = f"Error: {str(e)}"
-        extraction_stats['errors'] += 1
+    # Collect results as they complete
+    for future in as_completed(futures):
+        i, article, has_location, has_date, error = future.result()
 
-    # Check if both were extracted
-    if (article['stage3'].get('location', '').strip() and
-        article['stage3'].get('flood_date', '').strip()):
-        extraction_stats['both_extracted'] += 1
+        # Store in original order
+        extracted_articles[i] = article
 
-    # Progress indicator
-    if (i + 1) % progress_interval == 0:
-        logger.info(f"  Processed {i+1:,}/{len(stage2_articles):,} articles... "
-                   f"({extraction_stats['both_extracted']} complete)")
+        # Update statistics (thread-safe)
+        with stats_lock:
+            stats['processed'] += 1
+            if has_location:
+                stats['extracted'] += 1
+            else:
+                stats['no_location'] += 1
+            if not has_date:
+                stats['no_date'] += 1
 
-logger.info(f"\n✓ Extraction complete!")
-logger.info(f"  Location extracted: {extraction_stats['location_extracted']:,} "
-           f"({extraction_stats['location_extracted']/extraction_stats['total']:.1%})")
-logger.info(f"  Date extracted: {extraction_stats['date_extracted']:,} "
-           f"({extraction_stats['date_extracted']/extraction_stats['total']:.1%})")
-logger.info(f"  Both extracted: {extraction_stats['both_extracted']:,} "
-           f"({extraction_stats['both_extracted']/extraction_stats['total']:.1%})")
-if extraction_stats['errors'] > 0:
-    logger.warning(f"  Errors: {extraction_stats['errors']:,}")
+            # Progress indicator
+            if stats['processed'] % progress_interval == 0:
+                print(f"  Processed {stats['processed']:,}/{len(ontario_floods):,} articles... "
+                      f"({stats['extracted']} locations extracted)")
 
-# Save results
-output_path = OUTPUT_DIR / 'stage3_extracted.json'
+print(f"\n✓ Extraction complete!")
+print(f"  Locations extracted: {stats['extracted']:,} ({stats['extracted']/len(ontario_floods):.1%})")
+print(f"  No location found: {stats['no_location']:,}")
+print(f"  No date found: {stats['no_date']:,}")
+
+# Save extracted data
+output_path = OUTPUT_DIR / 'stage3_extracted_locations.json'
 with open(output_path, 'w') as f:
-    json.dump(stage2_articles, f, indent=2)
-logger.info(f"\n✓ Results saved: {output_path}")
+    json.dump(extracted_articles, f, indent=2)
+print(f"✓ Extracted data saved: {output_path}")
 
 # ============================================================================
 # FINAL SUMMARY
 # ============================================================================
 
-log_section(logger, "STAGE 3 COMPLETE")
+print("\n" + "="*70)
+print("STAGE 3 COMPLETE")
+print("="*70)
 
-logger.info(f"\nPipeline Summary:")
-logger.info(f"  Stage 2 input (Ontario floods): {len(stage2_articles):,} articles")
-logger.info(f"  After location extraction: {extraction_stats['location_extracted']:,} "
-           f"({extraction_stats['location_extracted']/len(stage2_articles):.1%})")
-logger.info(f"  After date extraction: {extraction_stats['date_extracted']:,} "
-           f"({extraction_stats['date_extracted']/len(stage2_articles):.1%})")
-logger.info(f"  Complete records (both): {extraction_stats['both_extracted']:,} "
-           f"({extraction_stats['both_extracted']/len(stage2_articles):.1%})")
+print(f"\nPipeline Summary:")
+print(f"  Stage 2 input (Ontario floods): {len(ontario_floods):,} articles")
+print(f"  Locations extracted: {stats['extracted']:,} articles")
 
-logger.info(f"\nOutput File:")
-logger.info(f"  {output_path}")
+print(f"\nOutput File:")
+print(f"  {output_path}")
 
-log_section(logger, "Ready for Stage 4: Impact Extraction")
-logger.info("")
+print(f"\n✅ Next step:")
+print(f"  Geocode locations with Mapbox:")
+print(f"  python stage3/geocode.py")
+
+print("\n" + "="*70 + "\n")

@@ -4,143 +4,196 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Multi-stage NLP pipeline to identify and extract flood information from 50,000+ Ontario newspaper articles using BERT filtering followed by LLM-based verification and extraction.
+**Purpose:** Extract flood event information from 50,000+ Ontario newspaper articles using a 3-stage NLP pipeline.
 
-**Pipeline Stages:**
-- **Stage 1 (BERT):** High-recall filter (>95%) to exclude non-flood articles
-- **Stage 2 (Local LLM):** High-precision flood verification + Ontario location check
-- **Stage 3 (Local LLM + Geocoding):** Extract flood date/location, geocode to lat/lon
-- **Stage 4 (External LLM):** Extract detailed flood impacts
+**Output:** Geocoded flood articles with dates and locations, ready for integration with the `flood_mcp` triangulation system.
 
-**Current Status:** Stage 1 (BERT) is complete. Stages 2-4 are in development.
+**Status:** Pipeline complete. All 3 stages operational.
 
-## Architecture
+## Pipeline Architecture
 
-### Data Flow
-Articles are progressively enriched through each stage:
 ```
-Raw articles (50K)
-  → Stage 1: Filter to ~5-15K candidates (BERT)
-  → Stage 2: Verify ~2-8K confirmed Ontario floods (LLM)
-  → Stage 3: Geolocate floods with dates
-  → Stage 4: Extract detailed impacts
+Raw Articles (50,247)
+       ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ STAGE 1: BERT Classification                                     │
+│ - Semi-supervised learning with pseudo-labeling                  │
+│ - High-recall filter (>95%) to avoid missing floods              │
+│ Output: 5,247 flood candidate articles                           │
+└─────────────────────────────────────────────────────────────────┘
+       ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ STAGE 2: LLM Flood Verification                                  │
+│ - Confirms actual flood events (not just mentions)               │
+│ - Verifies Ontario location                                      │
+│ Output: 2,290 verified Ontario flood articles                    │
+└─────────────────────────────────────────────────────────────────┘
+       ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ STAGE 3: Information Extraction & Geocoding                      │
+│ - NER extraction of locations/dates (spaCy)                      │
+│ - LLM verification and correction (Claude Sonnet)                │
+│ - Mapbox geocoding to lat/lon                                    │
+│ Output: 1,940 geocoded articles with dates/locations             │
+└─────────────────────────────────────────────────────────────────┘
+       ↓
+    Export to flood_mcp for triangulation with database sources
 ```
 
-Each stage adds a `stageN` key to article JSON with its results.
+## Directory Structure
 
-### Directory Structure
-- `shared/` - Shared configuration and utilities used across all stages
-  - `config.py` - **Central configuration for all paths, models, and settings**
-  - `utils.py` - Shared functions (DSPy data prep, JSON I/O, etc.)
-- `stage1-bert/` - BERT-based filtering (complete)
-  - `bert-train.py` - Semi-supervised BERT training with pseudo-labeling
-  - `bert-inference.py` - Apply trained model to full dataset
-  - `bert-data-splitter.py` - Split labeled data into train/test
-  - `data/` - Training/test datasets
-- `stage2/` - LLM flood verification (in progress)
-- `stage3/` - Location/date extraction (to do)
-- `stage4/` - Impact extraction (to do)
-- `working/` - Experimental/optimization scripts (DSPy-based)
-  - `pipeline.py` - DSPy pipeline with Phoenix tracing
-  - `optimize_*.py` - DSPy optimization experiments
-  - `metrics.py` - Evaluation metrics for DSPy
-  - `signatures.py` - DSPy signatures for tasks
-- `data/` - Raw articles (not in git, requires archive access)
-- `models/` - Trained BERT models (not in git)
-- `results/` - Pipeline outputs (not in git)
-- `annotations/` - Manual labeling tool
+```
+flood_pipeline/
+├── shared/                 # Shared configuration and utilities
+│   ├── config.py          # Central configuration (paths, models, settings)
+│   └── utils.py           # JSON I/O, data prep utilities
+│
+├── stage1-bert/           # BERT-based filtering (✅ Complete)
+│   ├── bert-train.py      # Semi-supervised training with pseudo-labeling
+│   ├── bert-inference.py  # Apply trained model to full dataset
+│   └── data/              # Training/test datasets
+│
+├── stage2/                # LLM flood verification (✅ Complete)
+│   ├── process.py         # Main processing script
+│   ├── signatures.py      # DSPy signatures for verification
+│   └── metrics.py         # Evaluation metrics
+│
+├── stage3/                # Location/date extraction (✅ Complete)
+│   ├── process_ner.py     # NER extraction with spaCy
+│   ├── process_llm_verify.py  # LLM verification of extracted data
+│   ├── geocode.py         # Mapbox geocoding
+│   └── signatures.py      # DSPy signatures for extraction
+│
+├── results/               # Pipeline outputs (not in git)
+│   ├── stage2_ontario_floods.json
+│   ├── stage3_verified.json
+│   └── stage3_geocoded.json  # Final output
+│
+├── models/                # Trained BERT models (not in git)
+├── data/                  # Raw articles (not in git)
+└── logs/                  # Processing logs
+```
 
 ## Key Commands
 
-### Environment Setup
+### Full Pipeline Run
+
 ```bash
+# Stage 1: BERT classification
+python stage1-bert/bert-inference.py
+
+# Stage 2: LLM flood verification
+python stage2/process.py
+
+# Stage 3: NER + LLM verification + Geocoding
+python stage3/process_ner.py           # Extract locations/dates with NER
+python stage3/process_llm_verify.py    # Verify/correct with LLM
+python stage3/geocode.py               # Geocode to lat/lon
+```
+
+### Environment Setup
+
+```bash
+# Create virtual environment
+python -m venv env
+source env/bin/activate
+
 # Install dependencies
 pip install -r requirements.txt
 
-# Configure environment (copy and edit if needed)
+# Configure API keys
 cp env.example .env
-
-# Note: Requires access to newspaper article archive (not in git)
+# Edit .env with MAPBOX_TOKEN and ANTHROPIC_API_KEY
 ```
 
-### Stage 1 (BERT Training & Inference)
-```bash
-# Train BERT model with semi-supervised learning
-python stage1-bert/bert-train.py
+## Current Results
 
-# Run inference on full dataset
-python stage1-bert/bert-inference.py
+| Stage | Input | Output | Rate |
+|-------|-------|--------|------|
+| Stage 1 (BERT) | 50,247 articles | 5,247 candidates | 10.4% |
+| Stage 2 (LLM) | 5,247 candidates | 2,290 Ontario floods | 43.6% |
+| Stage 3 (Geocode) | 2,290 articles | 1,940 geocoded | 84.7% |
 
-# Split labeled data for training (if needed)
-python stage1-bert/bert-data-splitter.py
+### Stage 3 Quality Metrics
+
+- Location verified (NER correct): 35.5%
+- Location corrected by LLM: 64.5%
+- Date high confidence: 49.9%
+- Date medium confidence: 16.5%
+- Date low/not found: 33.6%
+
+## Configuration
+
+All configuration in `shared/config.py`:
+
+- `PROJECT_ROOT` - Base path for all file operations
+- `STAGE1_CONFIG` - BERT model path, threshold (0.170 for high recall)
+- `STAGE2_CONFIG` - LLM settings for flood verification
+- `STAGE3_CONFIG` - NER model, geocoding settings
+
+### Environment Variables (.env)
+
+```
+MAPBOX_TOKEN=pk.xxx          # For geocoding
+ANTHROPIC_API_KEY=sk-xxx     # For Claude LLM calls
 ```
 
-### Development/Experimentation (DSPy)
-```bash
-# Run full DSPy pipeline with Phoenix tracing
-python working/pipeline.py
+## Data Format
 
-# Stage-specific optimization experiments
-python working/optimize_stage1_flood.py
-python working/optimize_stage1_5_ontario.py
-python working/optimize_stage2_details.py
+Articles are progressively enriched through each stage:
+
+```json
+{
+  "article_id": "12345",
+  "full_text": "...",
+  "publication_date": "2013-07-08",
+  "stage1": {
+    "flood_probability": 0.94,
+    "is_flood": true
+  },
+  "stage2": {
+    "is_flood": true,
+    "is_ontario": true,
+    "confidence": "high"
+  },
+  "stage3": {
+    "location": "Toronto",
+    "flood_date": "July 2013",
+    "latitude": 43.6532,
+    "longitude": -79.3832,
+    "date_confidence": "high"
+  }
+}
 ```
 
-## Important Configuration Details
+## Integration with flood_mcp
 
-### Centralized Configuration
-**All configuration lives in `shared/config.py`** - paths, model settings, stage parameters. Do not hardcode paths elsewhere.
+This pipeline's output (`results/stage3_geocoded.json`) feeds into the `flood_mcp` triangulation system where:
 
-Key config sections:
-- `PROJECT_ROOT` - Computed from config file location
-- Data file paths (train/test/unlabeled)
-- `MODEL_CONFIG` - Ollama LLM settings for DSPy
-- `STAGE1_CONFIG` - BERT model path, hyperparameters, threshold
-- `STAGE2_CONFIG` - DSPy optimization settings
+1. Articles become **cases** in the unified schema
+2. Cases cluster into **events** with database records
+3. Events receive confidence scores from multiple sources
+4. Feedback loop enables verification/rejection
 
-### Data Format
-Articles use flat JSON format with these key fields:
-- `full_text` / `article_text` - Article content
-- `publication_date` / `date` - Publication date
-- `flood_mentioned` - Boolean (labeled examples)
-- `location` - Flood location (if applicable)
-- `flood_date` - Date of flood event
-- `is_ontario` - Boolean for Ontario floods
-- `impacts` - Flood impact details
-
-DSPy examples are created using `shared/utils.py:prepare_data()` which handles both nested annotations format and flat format.
-
-### Stage 1 BERT Model
-- Uses semi-supervised learning with pseudo-labeling
-- Trains for multiple iterations, adding high-confidence predictions
-- Optimized for **high recall (>95%)** to avoid missing flood articles
-- Class weights favor recall over precision
-- Uses F1 (not recall) to select best epoch to avoid overfitting
-- Threshold is tuned post-training to achieve target recall
-- Model and threshold info saved to `models/balanced_high_recall_iter{N}/`
-
-### DSPy Integration
-- LLM backend: Ollama with Qwen2.5:14b-instruct (local)
-- Uses BootstrapFewShotWithRandomSearch for optimization
-- Phoenix tracing enabled in `working/pipeline.py`
-- Metrics defined in `working/metrics.py`
-- Task signatures in `working/signatures.py`
+The pipeline focuses on NLP extraction; impact data and triangulation happen downstream.
 
 ## Development Notes
 
-### Python Path Management
-Stage scripts add PROJECT_ROOT to sys.path for importing shared modules:
-```python
-PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-from shared.config import ...
-```
+### Adding New Articles
+
+The pipeline is designed to be rerunnable:
+1. Add new articles to `data/articles_restructured.json`
+2. Run Stage 1 inference (only processes new articles if implemented)
+3. Run Stages 2-3 on new candidates
 
 ### Model Files
-BERT models are large and stored locally in `models/`. Git ignores this directory. The active model is specified in `shared/config.py` via `STAGE1_CONFIG['bert_model_dir']`.
 
-### Data Access
-Raw newspaper articles are not in git. The pipeline expects `data/articles_restructured.json` with 50K+ articles. See DATA_README.md for source information.
+BERT models are stored in `models/` (not in git). Current model:
+- `models/balanced_high_recall_iter0/` - 97.7% recall, 76.8% precision
 
-### Working Directory
-The `working/` folder contains experimental DSPy-based implementations. These scripts explore optimization strategies and are not part of the production pipeline yet.
+### DSPy Integration
+
+Stages 2-3 use DSPy for LLM orchestration:
+- Signatures define input/output structure
+- Supports multiple backends (Claude, Ollama, etc.)
+- Metrics enable optimization experiments

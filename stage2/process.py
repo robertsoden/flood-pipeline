@@ -99,14 +99,17 @@ print("\n3. Loading optimized models...")
 
 # Configure language model with inference temperature for deterministic predictions
 temperature = get_temperature(STAGE2_CONFIG, mode='inference')
-lm = dspy.LM(
-    MODEL_CONFIG['name'],
-    api_base=MODEL_CONFIG['api_base'],
-    api_key=MODEL_CONFIG['api_key'],
-    temperature=temperature
-)
+
+# Build LM kwargs, excluding None values (needed for Bedrock which doesn't use api_base)
+lm_kwargs = {'temperature': temperature}
+if MODEL_CONFIG.get('api_base'):
+    lm_kwargs['api_base'] = MODEL_CONFIG['api_base']
+if MODEL_CONFIG.get('api_key'):
+    lm_kwargs['api_key'] = MODEL_CONFIG['api_key']
+
+lm = dspy.LM(MODEL_CONFIG['name'], **lm_kwargs)
 dspy.configure(lm=lm)
-print(f"   ✓ LM configured with temperature: {temperature} (inference mode)")
+print(f"   ✓ LM configured: {MODEL_CONFIG['name']} (temperature={temperature})")
 
 # Load optimized models
 from stage2.signatures import floodIdentification, isOntario

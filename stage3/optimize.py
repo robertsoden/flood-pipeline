@@ -1,250 +1,155 @@
 """
-Stage 3 Optimization: Train and optimize location/date extraction models
-Run this once to create optimized models, then use process.py to apply them.
+Stage 3 Optimization: Train location and date extraction model
 """
+import weave
 import sys
 from pathlib import Path
 import json
 import dspy
+import os
+import logging
+from datetime import datetime
 
-# Add project root to path
+# Weave tracing
+if not os.getenv('SKIP_WEAVE'):
+    weave.init('flood-stage3-optimization')
+
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Import from shared modules
-from shared.config import (
-    MODEL_CONFIG,
-    STAGE3_CONFIG,
-    PROJECT_ROOT,
-    get_temperature
-)
-from shared.utils import prepare_data
-from shared.logging_config import setup_logger, log_section, log_config, log_stats
-from stage3.signatures import LocationExtraction, DateExtraction
-from stage3.metrics import (
-    location_extraction_metric,
-    date_extraction_metric,
-    combined_extraction_metric
-)
-
 # Setup logging
-logger = setup_logger(__name__, 'stage3_optimize', PROJECT_ROOT)
+LOGS_DIR = PROJECT_ROOT / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+log_file = LOGS_DIR / f'stage3_optimize_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
 
-log_section(logger, "STAGE 3: MODEL OPTIMIZATION")
-logger.info("Training models to extract flood location and date from articles.\n")
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
+from shared.config import MODEL_CONFIG, PROJECT_ROOT, STAGE3_CONFIG, get_temperature
+from shared.utils import prepare_data
+from stage3.signatures import FloodLocationExtraction
+from stage3.metrics import location_extraction_metric
 
-MODELS_DIR = PROJECT_ROOT / 'models'
-MODELS_DIR.mkdir(parents=True, exist_ok=True)
-
-STAGE3_DATA_DIR = PROJECT_ROOT / 'stage3' / 'data'
-train_filepath = STAGE3_DATA_DIR / 'stage3_train_70pct.json'
-test_filepath = STAGE3_DATA_DIR / 'stage3_test_30pct.json'
-
-config_display = {
-    'Model': MODEL_CONFIG['name'],
-    'Max bootstrapped demos': STAGE3_CONFIG['max_bootstrapped_demos'],
-    'Max labeled demos': STAGE3_CONFIG['max_labeled_demos'],
-    'Num threads': STAGE3_CONFIG['num_threads'],
-}
-log_config(logger, config_display, "Configuration")
+print("\n" + "="*70)
+print("STAGE 3: LOCATION/DATE EXTRACTION OPTIMIZATION")
+print("="*70)
 
 # ============================================================================
 # LOAD DATA
 # ============================================================================
 
-logger.info("\n1. Loading labeled training/test data...")
+train_file = PROJECT_ROOT / 'stage3' / 'data' / 'stage3_train_70pct.json'
+test_file = PROJECT_ROOT / 'stage3' / 'data' / 'stage3_test_30pct.json'
 
-# Load labeled Ontario flood data
-try:
-    with open(train_filepath, 'r') as file:
-        train_set = prepare_data(json.load(file))
-    logger.info(f"   Training examples: {len(train_set)}")
-except FileNotFoundError:
-    logger.error(f"   ❌ ERROR: Training data not found at {train_filepath}")
-    logger.error(f"   Please run: python stage3/create_splits.py first")
-    sys.exit(1)
+print("\n1. Loading training/test data...")
 
-try:
-    with open(test_filepath, 'r') as file:
-        test_set = prepare_data(json.load(file))
-    logger.info(f"   Test examples: {len(test_set)}")
-except FileNotFoundError:
-    logger.error(f"   ❌ ERROR: Test data not found at {test_filepath}")
-    logger.error(f"   Please run: python stage3/create_splits.py first")
-    sys.exit(1)
+with open(train_file, 'r') as f:
+    train_set = prepare_data(json.load(f))
+
+with open(test_file, 'r') as f:
+    test_set = prepare_data(json.load(f))
+
+print(f"   Training examples: {len(train_set)}")
+print(f"   Test examples: {len(test_set)}")
 
 # ============================================================================
 # CONFIGURE DSPY
 # ============================================================================
 
-logger.info("\n2. Configuring DSPy...")
+print("\n2. Configuring DSPy...")
 
-# Configure language model with optimization temperature
 temperature = get_temperature(STAGE3_CONFIG, mode='optimization')
-lm = dspy.LM(
-    MODEL_CONFIG['name'],
-    api_base=MODEL_CONFIG['api_base'],
-    api_key=MODEL_CONFIG['api_key'],
-    temperature=temperature
-)
+
+# Configure LiteLLM
+import litellm
+litellm.num_retries = 5
+litellm.request_timeout = 120
+
+# Check for Anthropic API key
+anthropic_key = os.getenv('ANTHROPIC_API_KEY')
+if anthropic_key:
+    model_name = 'anthropic/claude-sonnet-4-20250514'
+    lm = dspy.LM(
+        model_name,
+        api_key=anthropic_key,
+        temperature=temperature,
+        num_retries=5
+    )
+    print(f"   ✓ Using Claude Sonnet 4 for optimization")
+else:
+    model_name = MODEL_CONFIG['name']
+    lm_kwargs = {'temperature': temperature}
+    if MODEL_CONFIG.get('api_base'):
+        lm_kwargs['api_base'] = MODEL_CONFIG['api_base']
+    if MODEL_CONFIG.get('api_key'):
+        lm_kwargs['api_key'] = MODEL_CONFIG['api_key']
+    lm = dspy.LM(model_name, **lm_kwargs)
+    print(f"   ✓ Using configured model: {model_name}")
+
 dspy.configure(lm=lm)
-logger.info(f"   ✓ LM configured: {MODEL_CONFIG['name']}")
-logger.info(f"   ✓ Temperature: {temperature} (optimization mode)")
 
 # ============================================================================
-# OPTIMIZE LOCATION EXTRACTION MODEL
+# OPTIMIZE EXTRACTION MODEL
 # ============================================================================
 
-log_section(logger, "OPTIMIZING LOCATION EXTRACTION MODEL")
-logger.info("Goal: Extract city, town, region, or province where flood occurred")
+print("\n" + "="*70)
+print("OPTIMIZING LOCATION/DATE EXTRACTION")
+print("="*70)
 
 # Create predictor
-location_extractor = dspy.ChainOfThought(LocationExtraction)
+extractor = dspy.ChainOfThought(FloodLocationExtraction)
 
-# Create evaluator
-evaluate_location = dspy.Evaluate(
+# Evaluate baseline
+evaluate = dspy.Evaluate(
     devset=test_set,
     metric=location_extraction_metric,
-    num_threads=STAGE3_CONFIG['num_threads'],
+    num_threads=STAGE3_CONFIG.get('num_threads', 1),
     display_progress=True,
-    display_table=True
+    display_table=True,
+    max_errors=10,
+    failure_score=0.0
 )
 
-# Baseline evaluation
-logger.info("\nEvaluating baseline location extractor...")
-baseline_location = evaluate_location(location_extractor)
-logger.info(f"Baseline Score: {baseline_location.score:.2f}%")
+print("Evaluating baseline...")
+baseline = evaluate(extractor)
+print(f"\n✓ Baseline Score: {baseline.score:.2f}%")
 
 # Optimize
-logger.info("\nOptimizing location extraction...")
-logger.info("Using MIPROv2 optimizer for better prompt engineering.")
-logger.info("This may take a while...\n")
+print(f"\nOptimizing with BootstrapFewShotWithRandomSearch...")
 
-location_optimizer = dspy.MIPROv2(
+from dspy.teleprompt import BootstrapFewShotWithRandomSearch
+
+optimizer = BootstrapFewShotWithRandomSearch(
     metric=location_extraction_metric,
-    auto="light",  # "light" = ~8 trials, faster optimization
-    num_threads=STAGE3_CONFIG['num_threads'],
-    verbose=True
+    max_bootstrapped_demos=STAGE3_CONFIG.get('max_bootstrapped_demos', 3),
+    max_labeled_demos=STAGE3_CONFIG.get('max_labeled_demos', 3),
+    num_candidate_programs=STAGE3_CONFIG.get('num_candidate_programs', 10),
+    num_threads=STAGE3_CONFIG.get('num_threads', 1)
 )
 
-optimized_location_extractor = location_optimizer.compile(
-    location_extractor,
-    trainset=train_set,
-    max_bootstrapped_demos=STAGE3_CONFIG['max_bootstrapped_demos'],
-    max_labeled_demos=STAGE3_CONFIG['max_labeled_demos']
-)
+optimized_extractor = optimizer.compile(extractor, trainset=train_set)
 
 # Evaluate optimized
-logger.info("\nEvaluating optimized location extractor...")
-optimized_location = evaluate_location(optimized_location_extractor)
-logger.info(f"Optimized Score: {optimized_location.score:.2f}%")
-logger.info(f"Improvement: {optimized_location.score - baseline_location.score:.2f}%")
+print("\nEvaluating optimized extractor...")
+optimized = evaluate(optimized_extractor)
+print(f"\n✓ Optimized Score: {optimized.score:.2f}%")
+print(f"✓ Improvement: {optimized.score - baseline.score:+.2f}%")
 
-# Calculate accuracy
-results = optimized_location.results
-correct = sum(1 for ex, pred, score in results if score > 0.0)
-partial = sum(1 for ex, pred, score in results if 0.0 < score < 1.0)
-wrong = sum(1 for ex, pred, score in results if score == 0.0)
+# Save model
+MODELS_DIR = PROJECT_ROOT / 'models'
+MODELS_DIR.mkdir(exist_ok=True)
+model_path = MODELS_DIR / 'stage3_location_extraction.json'
+optimized_extractor.save(str(model_path))
+print(f"\n✓ Model saved: {model_path}")
 
-accuracy = correct / len(results) if results else 0.0
-
-stats = {
-    'Total': len(results),
-    'Correct': f"{correct} ({correct/len(results):.1%})",
-    'Partial': f"{partial} ({partial/len(results):.1%})",
-    'Wrong': f"{wrong} ({wrong/len(results):.1%})",
-}
-log_stats(logger, stats, "Detailed Metrics")
-
-# Save optimized model
-model_path = MODELS_DIR / 'stage3_location_extractor.json'
-optimized_location_extractor.save(str(model_path))
-logger.info(f"\n✓ Location extraction model saved: {model_path}")
-
-# ============================================================================
-# OPTIMIZE DATE EXTRACTION MODEL
-# ============================================================================
-
-log_section(logger, "OPTIMIZING DATE EXTRACTION MODEL")
-logger.info("Goal: Extract when flood occurred (month and year)")
-
-# Create predictor
-date_extractor = dspy.ChainOfThought(DateExtraction)
-
-# Create evaluator
-evaluate_date = dspy.Evaluate(
-    devset=test_set,
-    metric=date_extraction_metric,
-    num_threads=STAGE3_CONFIG['num_threads'],
-    display_progress=True,
-    display_table=True
-)
-
-# Baseline evaluation
-logger.info("\nEvaluating baseline date extractor...")
-baseline_date = evaluate_date(date_extractor)
-logger.info(f"Baseline Score: {baseline_date.score:.2f}%")
-
-# Optimize
-logger.info("\nOptimizing date extraction...")
-logger.info("Using MIPROv2 optimizer for better prompt engineering.")
-logger.info("This may take a while...\n")
-
-date_optimizer = dspy.MIPROv2(
-    metric=date_extraction_metric,
-    auto="light",  # "light" = ~8 trials, faster optimization
-    num_threads=STAGE3_CONFIG['num_threads'],
-    verbose=True
-)
-
-optimized_date_extractor = date_optimizer.compile(
-    date_extractor,
-    trainset=train_set,
-    max_bootstrapped_demos=STAGE3_CONFIG['max_bootstrapped_demos'],
-    max_labeled_demos=STAGE3_CONFIG['max_labeled_demos']
-)
-
-# Evaluate optimized
-logger.info("\nEvaluating optimized date extractor...")
-optimized_date = evaluate_date(optimized_date_extractor)
-logger.info(f"Optimized Score: {optimized_date.score:.2f}%")
-logger.info(f"Improvement: {optimized_date.score - baseline_date.score:.2f}%")
-
-# Calculate accuracy
-results = optimized_date.results
-correct = sum(1 for ex, pred, score in results if score > 0.0)
-partial = sum(1 for ex, pred, score in results if 0.0 < score < 1.0)
-wrong = sum(1 for ex, pred, score in results if score == 0.0)
-
-stats = {
-    'Total': len(results),
-    'Correct': f"{correct} ({correct/len(results):.1%})",
-    'Partial': f"{partial} ({partial/len(results):.1%})",
-    'Wrong': f"{wrong} ({wrong/len(results):.1%})",
-}
-log_stats(logger, stats, "Detailed Metrics")
-
-# Save optimized model
-model_path = MODELS_DIR / 'stage3_date_extractor.json'
-optimized_date_extractor.save(str(model_path))
-logger.info(f"\n✓ Date extraction model saved: {model_path}")
-
-# ============================================================================
-# FINAL SUMMARY
-# ============================================================================
-
-log_section(logger, "OPTIMIZATION COMPLETE")
-
-logger.info(f"\nOptimized models saved:")
-logger.info(f"  {MODELS_DIR / 'stage3_location_extractor.json'}")
-logger.info(f"  {MODELS_DIR / 'stage3_date_extractor.json'}")
-
-logger.info(f"\nNext step:")
-logger.info(f"  Run: python stage3/process.py")
-logger.info(f"  This will apply the optimized models to Stage 2 results.")
-
-logger.info("\n" + "="*70 + "\n")
+print("\n" + "="*70)
+print("OPTIMIZATION COMPLETE")
+print("="*70)
+print(f"\nNext step: python stage3/process.py")

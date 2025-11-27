@@ -160,14 +160,38 @@ print("\n2. Configuring DSPy...")
 
 # Configure language model with optimization temperature
 temperature = get_temperature(STAGE2_CONFIG, mode='optimization')
-lm = dspy.LM(
-    MODEL_CONFIG['name'],
-    api_base=MODEL_CONFIG['api_base'],
-    api_key=MODEL_CONFIG['api_key'],
-    temperature=temperature
-)
+
+# Configure LiteLLM for robust rate limit handling
+import litellm
+litellm.num_retries = 5  # Retry failed requests up to 5 times
+litellm.request_timeout = 120  # 2 minute timeout per request
+
+# Check for Anthropic API key - use Claude Sonnet 4 for better optimization
+anthropic_key = os.getenv('ANTHROPIC_API_KEY')
+if anthropic_key:
+    # Use Claude Sonnet 4 for optimization (best quality demonstrations)
+    model_name = 'anthropic/claude-sonnet-4-20250514'
+    lm = dspy.LM(
+        model_name,
+        api_key=anthropic_key,
+        temperature=temperature,
+        num_retries=5  # Exponential backoff on rate limits
+    )
+    print(f"   ✓ Using Claude Sonnet 4 for optimization (high-quality demonstrations)")
+    print(f"   ✓ Rate limit handling: 5 retries with exponential backoff")
+else:
+    # Fall back to configured model (e.g., local Ollama or Bedrock)
+    model_name = MODEL_CONFIG['name']
+    lm_kwargs = {'temperature': temperature}
+    if MODEL_CONFIG.get('api_base'):
+        lm_kwargs['api_base'] = MODEL_CONFIG['api_base']
+    if MODEL_CONFIG.get('api_key'):
+        lm_kwargs['api_key'] = MODEL_CONFIG['api_key']
+    lm = dspy.LM(model_name, **lm_kwargs)
+    print(f"   ✓ Using configured model: {model_name}")
+
 dspy.configure(lm=lm)
-print(f"   ✓ LM configured: {MODEL_CONFIG['name']}")
+print(f"   ✓ LM configured: {model_name}")
 print(f"   ✓ Temperature: {temperature} (optimization mode)")
 
 # ============================================================================
@@ -183,13 +207,16 @@ print(f"Using all {len(train_set)} training examples\n")
 # Create predictor
 flood_verifier = dspy.ChainOfThought(floodIdentification)
 
-# Create evaluator
+# Create evaluator with error tolerance (retries handle most rate limits,
+# max_errors catches any stragglers)
 evaluate_flood = dspy.Evaluate(
     devset=test_set,
     metric=extraction_precision_focused_metric,
     num_threads=STAGE2_CONFIG['num_threads'],
     display_progress=True,
-    display_table=True
+    display_table=True,
+    max_errors=10,  # Tolerate up to 10 failures after retries exhausted
+    failure_score=0.0  # Treat failures as score 0 rather than crashing
 )
 
 # Baseline evaluation
@@ -463,13 +490,15 @@ if len(flood_positive_train) < 10:
 # Create predictor
 ontario_checker = dspy.ChainOfThought(isOntario)
 
-# Create evaluator
+# Create evaluator with error tolerance
 evaluate_ontario = dspy.Evaluate(
     devset=flood_positive_test,
     metric=ontario_correctness_metric,
     num_threads=STAGE2_CONFIG['num_threads'],
     display_progress=True,
-    display_table=True
+    display_table=True,
+    max_errors=10,
+    failure_score=0.0
 )
 
 # Baseline evaluation

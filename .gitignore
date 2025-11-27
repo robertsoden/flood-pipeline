@@ -15,7 +15,10 @@ data/labeled/
 stage1-bert/data/*.json
 stage2/data/*.json
 stage3/data/*.json
-stage4/data/*.json
+
+# Archive directories (old/experimental code)
+archive/
+*/archive/
 
 # Exception: Keep small example/test files if needed
 # !data/example_small.json
@@ -323,4 +326,4 @@ docs/.buildinfo
 !pyproject.toml
 
 # Keep small test data
-!tests/fixtures/*.json
+!tests/fixtures/*.json.env
