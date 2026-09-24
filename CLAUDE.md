@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Purpose:** Extract flood event information from 50,000+ Ontario newspaper articles using a 3-stage NLP pipeline.
 
-**Output:** Geocoded flood articles with dates and locations, ready for integration with the `flood_mcp` triangulation system.
+**Output:** Geocoded flood articles with dates and locations, ready for integration with the `flood_triangulation` system.
 
 **Status:** Pipeline complete. All 3 stages operational.
 
@@ -37,16 +37,20 @@ Raw Articles (50,247)
 │ Output: 1,940 geocoded articles with dates/locations             │
 └─────────────────────────────────────────────────────────────────┘
        ↓
-    Export to flood_mcp for triangulation with database sources
+    Export to flood_triangulation for cataloguing with database sources
 ```
 
 ## Directory Structure
 
 ```
-flood_pipeline/
+flood_news/
 ├── shared/                 # Shared configuration and utilities
 │   ├── config.py          # Central configuration (paths, models, settings)
-│   └── utils.py           # JSON I/O, data prep utilities
+│   ├── utils.py           # JSON I/O, data prep utilities
+│   ├── validation.py      # Pydantic schemas, article ID generation
+│   ├── checkpoint.py      # Checkpoint/resume functionality
+│   ├── dspy_utils.py      # DSPy LM configuration helpers
+│   └── logging_config.py  # Standardized logging setup
 │
 ├── stage1-bert/           # BERT-based filtering (✅ Complete)
 │   ├── bert-train.py      # Semi-supervised training with pseudo-labeling
@@ -54,21 +58,30 @@ flood_pipeline/
 │   └── data/              # Training/test datasets
 │
 ├── stage2/                # LLM flood verification (✅ Complete)
-│   ├── process.py         # Main processing script
+│   ├── process.py         # Main processing script (supports --resume)
+│   ├── optimize.py        # DSPy optimization for model training
 │   ├── signatures.py      # DSPy signatures for verification
 │   └── metrics.py         # Evaluation metrics
 │
 ├── stage3/                # Location/date extraction (✅ Complete)
 │   ├── process_ner.py     # NER extraction with spaCy
-│   ├── process_llm_verify.py  # LLM verification of extracted data
-│   ├── geocode.py         # Mapbox geocoding
+│   ├── process_llm_verify.py  # LLM verification (supports --resume)
+│   ├── ner_extractor.py   # NER extraction logic with 300+ Ontario places
+│   ├── geocode.py         # Mapbox geocoding (caches results)
 │   └── signatures.py      # DSPy signatures for extraction
+│
+├── tests/                 # Test suite
+│   ├── test_integration.py    # Pipeline data flow tests
+│   ├── test_extraction.py     # NER extraction accuracy tests
+│   ├── test_edge_cases.py     # Edge case handling tests
+│   └── conftest.py            # Pytest fixtures
 │
 ├── results/               # Pipeline outputs (not in git)
 │   ├── stage2_ontario_floods.json
 │   ├── stage3_verified.json
 │   └── stage3_geocoded.json  # Final output
 │
+├── checkpoints/           # Resume checkpoints (not in git)
 ├── models/                # Trained BERT models (not in git)
 ├── data/                  # Raw articles (not in git)
 └── logs/                  # Processing logs
@@ -91,6 +104,38 @@ python stage3/process_llm_verify.py    # Verify/correct with LLM
 python stage3/geocode.py               # Geocode to lat/lon
 ```
 
+### Resume After Interruption
+
+Stages 2 and 3 support checkpoint/resume for long-running processing:
+
+```bash
+# Resume Stage 2 from last checkpoint
+python stage2/process.py --resume
+
+# Resume Stage 3 LLM verification from checkpoint
+python stage3/process_llm_verify.py --resume
+
+# Start fresh (clear existing checkpoints)
+python stage2/process.py --clear-checkpoint
+python stage3/process_llm_verify.py --clear-checkpoint
+
+# Adjust checkpoint frequency (default: 100 for stage2, 50 for stage3)
+python stage2/process.py --checkpoint-interval 50
+```
+
+### Testing
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_integration.py -v
+
+# Run with coverage
+pytest tests/ --cov=shared --cov=stage3 -v
+```
+
 ### Environment Setup
 
 ```bash
@@ -100,6 +145,9 @@ source env/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Download spaCy model for NER
+python -m spacy download en_core_web_sm
 
 # Configure API keys
 cp env.example .env
@@ -166,16 +214,25 @@ Articles are progressively enriched through each stage:
 }
 ```
 
-## Integration with flood_mcp
+## Integration with flood_triangulation
 
-This pipeline's output (`results/stage3_geocoded.json`) feeds into the `flood_mcp` triangulation system where:
+This repo's output (`results/stage3_geocoded.json`) feeds into the `flood_triangulation` system:
 
+```
+flood_news/results/stage3_geocoded.json
+        ↓
+flood_triangulation/scripts/pipeline/ingest/ingest_article_cases.py
+        ↓
+Flood inventory combining articles + database records + hydro data
+```
+
+In flood_triangulation:
 1. Articles become **cases** in the unified schema
 2. Cases cluster into **events** with database records
-3. Events receive confidence scores from multiple sources
-4. Feedback loop enables verification/rejection
+3. Events are enriched with hydrometric evidence
+4. Cross-referencing identifies confirmed floods and gaps
 
-The pipeline focuses on NLP extraction; impact data and triangulation happen downstream.
+This repo focuses on NLP extraction; triangulation and cataloguing happen downstream.
 
 ## Development Notes
 
@@ -197,3 +254,59 @@ Stages 2-3 use DSPy for LLM orchestration:
 - Signatures define input/output structure
 - Supports multiple backends (Claude, Ollama, etc.)
 - Metrics enable optimization experiments
+
+### Shared Utilities
+
+The `shared/` module provides common functionality:
+
+```python
+from shared import (
+    # Configuration
+    PROJECT_ROOT, MODEL_CONFIG, STAGE2_CONFIG, STAGE3_CONFIG,
+
+    # Article ID handling (ensures traceability across stages)
+    ensure_article_id,        # Add article_id if missing
+    normalize_article_fields, # Standardize field names
+
+    # Checkpoint/resume (for long-running processing)
+    CheckpointManager,        # Save/load processing state
+    filter_unprocessed,       # Skip already-processed articles
+
+    # DSPy helpers
+    configure_dspy_lm,        # Configure LLM with retries
+    load_optimized_model,     # Load saved DSPy models
+
+    # Logging
+    setup_logger,             # Standardized logging setup
+    log_section,              # Section headers in logs
+
+    # Validation
+    validate_articles,        # Pydantic schema validation
+    ArticleBase,              # Base article schema
+)
+```
+
+### Article ID Consistency
+
+All articles must have a unique `article_id` for traceability:
+- If `article_id` exists, it's preserved
+- If only `id` exists, it's used as `article_id`
+- Otherwise, a deterministic hash ID is generated from content
+
+Use `normalize_article_fields(article)` to ensure consistency.
+
+### Geocode Caching
+
+`stage3/geocode.py` automatically loads cached geocoding results from `results/geocode_cache.json` to avoid redundant API calls. The cache persists between runs.
+
+### Testing
+
+Tests are in `tests/` and cover:
+- **Integration tests**: Data flow between stages, checkpoint functionality
+- **Extraction tests**: NER accuracy for locations and dates
+- **Edge cases**: Empty articles, missing fields, non-Ontario floods
+
+Run tests before making significant changes:
+```bash
+pytest tests/ -v
+```

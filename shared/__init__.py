@@ -5,6 +5,7 @@ Shared utilities and configuration for flood enrichment pipeline.
 # Import all configuration variables and functions
 from .config import (
     # File paths
+    PROJECT_ROOT,
     train_filepath,
     test_filepath,
     extraction_filepath,
@@ -44,6 +45,9 @@ from .validation import (
     validate_articles,
     validate_with_auto_detect,
     detect_article_format,
+    generate_article_id,
+    ensure_article_id,
+    normalize_article_fields,
     ArticleBase,
     LabeledArticleNested,
     LabeledArticleFlat,
@@ -52,8 +56,23 @@ from .validation import (
     Stage2Results,
 )
 
+# Import checkpoint utilities
+from .checkpoint import (
+    CheckpointManager,
+    filter_unprocessed,
+)
+
+# Import DSPy utilities
+from .dspy_utils import (
+    configure_dspy_lm,
+    get_configured_lm,
+    load_optimized_model,
+    create_evaluator,
+)
+
 __all__ = [
     # Config - File paths
+    'PROJECT_ROOT',
     'train_filepath',
     'test_filepath',
     'extraction_filepath',
@@ -87,6 +106,9 @@ __all__ = [
     'validate_articles',
     'validate_with_auto_detect',
     'detect_article_format',
+    'generate_article_id',
+    'ensure_article_id',
+    'normalize_article_fields',
 
     # Validation - Schemas
     'ArticleBase',
@@ -95,4 +117,14 @@ __all__ = [
     'UnlabeledArticle',
     'Stage1Results',
     'Stage2Results',
+
+    # Checkpoint utilities
+    'CheckpointManager',
+    'filter_unprocessed',
+
+    # DSPy utilities
+    'configure_dspy_lm',
+    'get_configured_lm',
+    'load_optimized_model',
+    'create_evaluator',
 ]

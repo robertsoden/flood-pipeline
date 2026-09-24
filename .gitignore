@@ -327,3 +327,6 @@ docs/.buildinfo
 
 # Keep small test data
 !tests/fixtures/*.json.env
+
+# Internet Archive newspaper scans (~14 GB)
+data/ia_newspapers/

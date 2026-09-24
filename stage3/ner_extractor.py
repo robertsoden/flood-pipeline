@@ -15,28 +15,125 @@ except OSError:
     nlp = None
 
 # Common Ontario place names (cities, towns, regions, rivers)
+# Comprehensive list including smaller municipalities affected by historical floods
 ONTARIO_PLACES = {
+    # Major Cities
     'Toronto', 'Ottawa', 'Mississauga', 'Brampton', 'Hamilton', 'London',
     'Markham', 'Vaughan', 'Kitchener', 'Windsor', 'Richmond Hill', 'Oakville',
     'Burlington', 'Oshawa', 'Barrie', 'St. Catharines', 'Cambridge', 'Kingston',
     'Guelph', 'Whitby', 'Thunder Bay', 'Waterloo', 'Sudbury', 'Brantford',
     'Pickering', 'Niagara Falls', 'Peterborough', 'Sault Ste. Marie', 'Sarnia',
     'North Bay', 'Cornwall', 'Belleville', 'Welland', 'Timmins', 'Chatham',
-    'Vaughan', 'Scarborough', 'Etobicoke', 'North York',
+    'Scarborough', 'Etobicoke', 'North York', 'Ajax', 'Aurora', 'Newmarket',
+    'Stouffville', 'Milton', 'Georgetown', 'Orangeville', 'Collingwood',
+    'Orillia', 'Midland', 'Owen Sound', 'Stratford', 'Woodstock', 'St. Thomas',
+    'Leamington', 'Amherstburg', 'Tecumseh', 'LaSalle', 'Kingsville',
 
-    # Regions
+    # Toronto-area flood-prone communities
+    'Weston', 'Woodbridge', 'Kleinburg', 'Maple', 'Thornhill', 'Unionville',
+    'Agincourt', 'Malvern', 'Port Credit', 'Streetsville', 'Meadowvale',
+    'Clarkson', 'Lorne Park', 'Cooksville', 'Dixie', 'Malton', 'Bramalea',
+    'Heart Lake', 'Springdale', 'Sandalwood', 'Castlemore', 'Caledon',
+    'Bolton', 'Nobleton', 'King City', 'Schomberg', 'Bradford', 'Holland Landing',
+    'Keswick', 'Sutton', 'Georgina', 'East Gwillimbury', 'Sharon',
+
+    # GTA Terms
+    'Greater Toronto Area', 'GTA', 'Toronto area',
+
+    # Central Ontario
+    'Orillia', 'Gravenhurst', 'Bracebridge', 'Huntsville', 'Parry Sound',
+    'Muskoka', 'Haliburton', 'Minden', 'Fenelon Falls', 'Bobcaygeon',
+    'Lindsay', 'Port Perry', 'Uxbridge', 'Cannington', 'Beaverton',
+    'Kawartha Lakes', 'Lakefield', 'Norwood', 'Hastings', 'Campbellford',
+    'Cobourg', 'Port Hope', 'Bowmanville', 'Newcastle', 'Clarington',
+
+    # Eastern Ontario
+    'Trenton', 'Picton', 'Prince Edward County', 'Napanee', 'Brockville',
+    'Prescott', 'Kemptville', 'Smiths Falls', 'Perth', 'Carleton Place',
+    'Almonte', 'Arnprior', 'Renfrew', 'Pembroke', 'Deep River', 'Petawawa',
+    'Barry\'s Bay', 'Bancroft', 'Madoc', 'Tweed', 'Deseronto', 'Gananoque',
+
+    # Southwestern Ontario
+    'Goderich', 'Kincardine', 'Port Elgin', 'Southampton', 'Hanover',
+    'Walkerton', 'Durham', 'Mount Forest', 'Arthur', 'Fergus', 'Elora',
+    'Listowel', 'Wingham', 'Clinton', 'Exeter', 'Grand Bend', 'Bayfield',
+    'Mitchell', 'Seaforth', 'Brussels', 'Lucknow', 'Ripley', 'Teeswater',
+    'Mildmay', 'Chesley', 'Paisley', 'Port Dover', 'Simcoe', 'Delhi',
+    'Tillsonburg', 'Ingersoll', 'Tavistock', 'New Hamburg', 'Baden',
+    'Elmira', 'St. Jacobs', 'Conestogo', 'Woolwich', 'Wellesley',
+    'Ayr', 'Paris', 'Caledonia', 'Cayuga', 'Dunnville', 'Port Colborne',
+    'Fort Erie', 'Crystal Beach', 'Ridgeway', 'Stevensville', 'Fonthill',
+    'Thorold', 'Merritton', 'Port Dalhousie', 'Virgil', 'Niagara-on-the-Lake',
+    'Grimsby', 'Beamsville', 'Vineland', 'Jordan', 'Smithville', 'Binbrook',
+    'Stoney Creek', 'Ancaster', 'Dundas', 'Waterdown', 'Flamborough',
+    'Carlisle', 'Freelton', 'Rockwood', 'Acton', 'Erin', 'Hillsburgh',
+
+    # Northern Ontario
+    'North Bay', 'Sudbury', 'Sault Ste. Marie', 'Thunder Bay', 'Timmins',
+    'Kirkland Lake', 'Temiskaming Shores', 'New Liskeard', 'Haileybury',
+    'Cobalt', 'Englehart', 'Cochrane', 'Kapuskasing', 'Hearst', 'Smooth Rock Falls',
+    'Iroquois Falls', 'Matheson', 'Chapleau', 'Wawa', 'White River',
+    'Marathon', 'Nipigon', 'Red Rock', 'Terrace Bay', 'Schreiber',
+    'Kenora', 'Dryden', 'Sioux Lookout', 'Fort Frances', 'Rainy River',
+    'Atikokan', 'Geraldton', 'Longlac', 'Nakina', 'Hornepayne',
+    'Espanola', 'Elliot Lake', 'Blind River', 'Thessalon', 'Bruce Mines',
+    'Iron Bridge', 'Massey', 'Little Current', 'Manitoulin Island', 'Gore Bay',
+
+    # Regions and Counties
     'Muskoka', 'Haliburton', 'Kawartha', 'Niagara', 'Essex', 'Kent', 'Elgin',
     'Oxford', 'Perth', 'Huron', 'Bruce', 'Grey', 'Simcoe', 'York', 'Durham',
     'Peel', 'Halton', 'Waterloo', 'Wellington', 'Dufferin', 'Peterborough',
+    'Northumberland', 'Hastings', 'Prince Edward', 'Lennox and Addington',
+    'Frontenac', 'Leeds and Grenville', 'Lanark', 'Renfrew', 'Ottawa-Carleton',
+    'Prescott and Russell', 'Stormont, Dundas and Glengarry', 'Lambton',
+    'Middlesex', 'Norfolk', 'Haldimand', 'Brant', 'Chatham-Kent',
 
-    # Rivers
+    # Rivers - extensively expanded
     'Grand River', 'Thames River', 'Credit River', 'Humber River', 'Don River',
     'Rouge River', 'Trent River', 'Moira River', 'Ottawa River', 'Rideau River',
     'Speed River', 'Saugeen River', 'Maitland River', 'Ausable River',
+    'Sydenham River', 'Nith River', 'Conestogo River', 'Eramosa River',
+    'Nottawasaga River', 'Mad River', 'Beaver River', 'Pretty River',
+    'Black River', 'Severn River', 'Talbot River', 'Beaverton River',
+    'Holland River', 'East Holland River', 'West Holland River',
+    'Schomberg River', 'Pefferlaw River', 'Maskinonge River',
+    'Ganaraska River', 'Wilmot Creek', 'Bowmanville Creek', 'Oshawa Creek',
+    'Lynde Creek', 'Duffins Creek', 'Petticoat Creek', 'Highland Creek',
+    'Mimico Creek', 'Etobicoke Creek', 'Black Creek', 'Weston Creek',
+    'Catfish Creek', 'Big Creek', 'Big Otter Creek', 'Kettle Creek',
+    'Cataraqui River', 'Salmon River', 'Napanee River', 'Gananoque River',
+    'Mississippi River', 'Clyde River', 'Indian River', 'Jock River',
+    'Carp River', 'South Nation River', 'Castor River', 'Payne River',
+    'Petawawa River', 'Bonnechere River', 'Madawaska River', 'Opeongo River',
+    'York River', 'Magnetawan River', 'Pickerel River', 'French River',
+    'Sturgeon River', 'Mattawa River', 'Montreal River', 'Blanche River',
+    'Englehart River', 'Missinaibi River', 'Mattagami River', 'Abitibi River',
+    'Moose River', 'Albany River', 'Attawapiskat River', 'Winisk River',
+    'Severn River (Northern)', 'Rainy River', 'Winnipeg River', 'English River',
+    'Wabigoon River', 'Kaministiquia River', 'Current River', 'McIntyre River',
+    'Neebing River', 'Pigeon River', 'Spanish River', 'Vermilion River',
+    'Whitefish River', 'Wanapitei River', 'Onaping River', 'Levack River',
+
+    # Creeks commonly involved in floods
+    'Sixteen Mile Creek', 'Fourteen Mile Creek', 'Twelve Mile Creek',
+    'Twenty Mile Creek', 'Forty Mile Creek', 'Bronte Creek',
+    'Grindstone Creek', 'Spencer Creek', 'Redhill Creek', 'Chedoke Creek',
+    'Ancaster Creek', 'Sulphur Creek', 'Stoney Creek', 'Battlefield Creek',
 
     # Lakes
     'Lake Ontario', 'Lake Erie', 'Lake Huron', 'Lake Superior', 'Lake Simcoe',
-    'Lake Nipissing', 'Rice Lake', 'Lake of Bays', 'Georgian Bay'
+    'Lake Nipissing', 'Rice Lake', 'Lake of Bays', 'Georgian Bay',
+    'Lake Scugog', 'Lake Couchiching', 'Lake Muskoka', 'Lake Rosseau',
+    'Lake Joseph', 'Balsam Lake', 'Cameron Lake', 'Sturgeon Lake',
+    'Pigeon Lake', 'Buckhorn Lake', 'Chemong Lake', 'Clear Lake',
+    'Stony Lake', 'Lovesick Lake', 'Burleigh Falls', 'Jack Lake',
+    'Lake St. Clair', 'Lake Temiskaming', 'Lake Nipigon', 'Lake of the Woods',
+    'Rainy Lake', 'Lac Seul', 'Lake Abitibi', 'Moose Lake',
+
+    # Flood control areas and conservation areas
+    'Holland Marsh', 'Dundas Valley', 'Don Valley', 'Humber Valley',
+    'Rouge Valley', 'Highland Creek Valley', 'Etobicoke Valley',
+    'Credit Valley', 'Sixteen Mile Creek Valley', 'Bronte Creek Valley',
 }
 
 # Month names for date extraction

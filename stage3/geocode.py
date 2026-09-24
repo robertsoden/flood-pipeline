@@ -82,10 +82,116 @@ if args.sample:
 # Cache to avoid duplicate API calls
 geocode_cache = {}
 
+# Load existing cache if available
+CACHE_FILE = OUTPUT_DIR / 'geocode_cache.json'
+if CACHE_FILE.exists():
+    try:
+        with open(CACHE_FILE, 'r') as f:
+            geocode_cache = json.load(f)
+        print(f"   Loaded {len(geocode_cache)} cached locations from {CACHE_FILE}")
+    except Exception as e:
+        print(f"   Warning: Could not load cache file: {e}")
+        geocode_cache = {}
+
+# Ontario bounding box (approximate)
+ONTARIO_BOUNDS = {
+    'min_lat': 41.7,   # Southern tip (Pelee Island)
+    'max_lat': 56.9,   # Northern boundary
+    'min_lon': -95.2,  # Western boundary (near Manitoba)
+    'max_lon': -74.3   # Eastern boundary (near Quebec)
+}
+
+# Known Ontario locations with ambiguous names (fallback coordinates)
+# These are locations that commonly geocode incorrectly
+KNOWN_ONTARIO_LOCATIONS = {
+    # Toronto and GTA general terms
+    'greater toronto area': {'lat': 43.70, 'lon': -79.42, 'place_name': 'Greater Toronto Area, Ontario'},
+    'toronto area': {'lat': 43.70, 'lon': -79.42, 'place_name': 'Toronto Area, Ontario'},
+    'gta': {'lat': 43.70, 'lon': -79.42, 'place_name': 'Greater Toronto Area, Ontario'},
+
+    # Toronto-area rivers and creeks
+    'humber river': {'lat': 43.65, 'lon': -79.49, 'place_name': 'Humber River, Toronto, Ontario'},
+    'don river': {'lat': 43.70, 'lon': -79.35, 'place_name': 'Don River, Toronto, Ontario'},
+    'rouge river': {'lat': 43.80, 'lon': -79.15, 'place_name': 'Rouge River, Toronto, Ontario'},
+    'credit river': {'lat': 43.55, 'lon': -79.60, 'place_name': 'Credit River, Mississauga, Ontario'},
+    'etobicoke creek': {'lat': 43.65, 'lon': -79.60, 'place_name': 'Etobicoke Creek, Ontario'},
+    'highland creek': {'lat': 43.78, 'lon': -79.19, 'place_name': 'Highland Creek, Scarborough, Ontario'},
+    'mimico creek': {'lat': 43.65, 'lon': -79.53, 'place_name': 'Mimico Creek, Toronto, Ontario'},
+    'black creek': {'lat': 43.72, 'lon': -79.49, 'place_name': 'Black Creek, Toronto, Ontario'},
+
+    # Holland Marsh area
+    'holland marsh': {'lat': 44.10, 'lon': -79.55, 'place_name': 'Holland Marsh, Ontario'},
+    'holland landing': {'lat': 44.10, 'lon': -79.49, 'place_name': 'Holland Landing, Ontario'},
+    'holland river': {'lat': 44.10, 'lon': -79.50, 'place_name': 'Holland River, Ontario'},
+
+    # Grand River watershed
+    'grand river': {'lat': 43.40, 'lon': -80.40, 'place_name': 'Grand River, Ontario'},
+    'orangeville': {'lat': 43.92, 'lon': -80.09, 'place_name': 'Orangeville, Ontario'},
+    'waldemar': {'lat': 43.93, 'lon': -80.15, 'place_name': 'Waldemar, Ontario'},
+    'six nations': {'lat': 43.06, 'lon': -80.11, 'place_name': 'Six Nations, Ontario'},
+
+    # Thames River watershed
+    'thames river': {'lat': 42.98, 'lon': -81.25, 'place_name': 'Thames River, London, Ontario'},
+    'chatham-kent': {'lat': 42.41, 'lon': -82.19, 'place_name': 'Chatham-Kent, Ontario'},
+
+    # Eastern Ontario rivers
+    'rideau river': {'lat': 45.42, 'lon': -75.70, 'place_name': 'Rideau River, Ottawa, Ontario'},
+    'moira river': {'lat': 44.17, 'lon': -77.38, 'place_name': 'Moira River, Belleville, Ontario'},
+    'trent river': {'lat': 44.10, 'lon': -77.58, 'place_name': 'Trent River, Ontario'},
+    'otonabee river': {'lat': 44.30, 'lon': -78.32, 'place_name': 'Otonabee River, Peterborough, Ontario'},
+    'madawaska river': {'lat': 45.43, 'lon': -77.10, 'place_name': 'Madawaska River, Ontario'},
+    # Note: Ontario's Mississippi River (not the US one)
+    'mississippi river': {'lat': 45.15, 'lon': -76.25, 'place_name': 'Mississippi River, Lanark County, Ontario'},
+
+    # Central/Northern Ontario
+    'muskoka river': {'lat': 45.03, 'lon': -79.30, 'place_name': 'Muskoka River, Ontario'},
+    'spanish river': {'lat': 46.20, 'lon': -81.90, 'place_name': 'Spanish River, Ontario'},
+    'magnetawan river': {'lat': 45.67, 'lon': -79.63, 'place_name': 'Magnetawan River, Ontario'},
+    'french river': {'lat': 46.04, 'lon': -80.77, 'place_name': 'French River, Ontario'},
+    'mattagami river': {'lat': 49.70, 'lon': -82.50, 'place_name': 'Mattagami River, Ontario'},
+
+    # Lake Huron / Georgian Bay watersheds
+    'saugeen river': {'lat': 44.50, 'lon': -81.37, 'place_name': 'Saugeen River, Southampton, Ontario'},
+    'nottawasaga river': {'lat': 44.33, 'lon': -79.93, 'place_name': 'Nottawasaga River, Ontario'},
+    'severn river': {'lat': 44.80, 'lon': -79.72, 'place_name': 'Severn River, Ontario'},
+}
+
+
+def is_in_ontario_bounds(lat: float, lon: float) -> bool:
+    """Check if coordinates are within Ontario's bounding box."""
+    return (ONTARIO_BOUNDS['min_lat'] <= lat <= ONTARIO_BOUNDS['max_lat'] and
+            ONTARIO_BOUNDS['min_lon'] <= lon <= ONTARIO_BOUNDS['max_lon'])
+
+
+def check_ontario_in_context(feature: dict) -> bool:
+    """
+    Robustly check if a Mapbox feature is in Ontario.
+    Checks the context array for region (province) level.
+    """
+    context = feature.get('context', [])
+
+    # Look for region (province) in context
+    for ctx in context:
+        ctx_id = ctx.get('id', '')
+        ctx_text = ctx.get('text', '')
+        # Region ID for Ontario typically contains 'region' and the text is 'Ontario'
+        if 'region' in ctx_id and ctx_text == 'Ontario':
+            return True
+
+    # Also check place_name for ', Ontario,' pattern (not just 'Ontario' anywhere)
+    place_name = feature.get('place_name', '')
+    if ', Ontario,' in place_name or place_name.endswith(', Ontario'):
+        return True
+
+    return False
+
+
 def geocode_location(location: str) -> dict:
     """
     Geocode a location string using Mapbox API.
     Returns dict with lat, lon, place_name, and confidence.
+
+    Uses known location fallbacks for ambiguous Ontario place names.
     """
     if not location or location.lower() == 'not found':
         return None
@@ -94,6 +200,22 @@ def geocode_location(location: str) -> dict:
     cache_key = location.lower().strip()
     if cache_key in geocode_cache:
         return geocode_cache[cache_key]
+
+    # Check for known Ontario locations first (handles ambiguous names)
+    location_lower = location.lower()
+    for known_name, known_coords in KNOWN_ONTARIO_LOCATIONS.items():
+        if known_name in location_lower:
+            # Use known coordinates for ambiguous locations
+            result = {
+                'lat': known_coords['lat'],
+                'lon': known_coords['lon'],
+                'place_name': known_coords['place_name'],
+                'relevance': 0.95,  # High confidence for known locations
+                'in_ontario': True,
+                'source': 'known_location'
+            }
+            geocode_cache[cache_key] = result
+            return result
 
     # Add Ontario, Canada context for better results
     query = f"{location}, Ontario, Canada"
@@ -117,19 +239,22 @@ def geocode_location(location: str) -> dict:
 
         if data.get('features') and len(data['features']) > 0:
             feature = data['features'][0]
+            lat = feature['center'][1]
+            lon = feature['center'][0]
+
+            is_ontario_context = check_ontario_in_context(feature)
+            is_ontario_bounds = is_in_ontario_bounds(lat, lon)
+            in_ontario = is_ontario_context and is_ontario_bounds
+
             result = {
-                'lat': feature['center'][1],
-                'lon': feature['center'][0],
+                'lat': lat,
+                'lon': lon,
                 'place_name': feature.get('place_name', ''),
                 'relevance': feature.get('relevance', 0),
                 'place_type': feature.get('place_type', []),
+                'in_ontario': in_ontario,
+                'source': 'mapbox'
             }
-
-            # Check if result is actually in Ontario
-            context = feature.get('context', [])
-            in_ontario = any('Ontario' in c.get('text', '') for c in context)
-            in_ontario = in_ontario or 'Ontario' in feature.get('place_name', '')
-            result['in_ontario'] = in_ontario
 
             geocode_cache[cache_key] = result
             return result
